@@ -526,7 +526,7 @@ function renderSettings() {
       <input type="file" id="restoreFile" accept="application/json,.json" style="display:none"></div>
     <div class="row" style="margin-top:14px"><button class="btn" id="resetBtn" style="border-color:var(--danger);color:var(--danger)">Reset to starter recipes</button></div></div>
 
-    <div class="card"><h2>About</h2><div class="small muted"><b>Version 1.0</b> · On-device family meal planner. Metric, energy in kJ, prices in AUD. Auto-updates from Netlify. Cost and nutrition figures are estimates.</div></div>`;
+    <div class="card"><h2>About</h2><div class="small muted"><b>Version 1.0</b> · On-device family meal planner. Metric, energy in kJ, prices in AUD. Auto-updates when online. Cost and nutrition figures are estimates.</div></div>`;
 
   const saveHousehold = async () => { await Store.saveSettings({ household_adults: +$("s_adults").value || 0, household_children: +$("s_children").value || 0,
     servings_per_meal: +$("s_serves").value || 4, weekly_budget: +$("s_budget").value || 0 }); toast("Saved"); };
