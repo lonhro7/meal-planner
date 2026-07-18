@@ -430,10 +430,25 @@ const Store = {
     }
     return { start_date: start, weeks_count: weeksN, weeks, today: todayISO(), settings: this.getSettings() };
   },
+  // Effective servings for a night. A cook night that feeds one or more leftover
+  // nights is scaled up so the original batch covers them all (e.g. serves 4 that
+  // feeds one leftover night -> cook 8). Derived, so it always reflects the current
+  // plan with no stale state. Leftover/away nights just use their own servings.
+  mealServings(m) {
+    const dflt = this.state.settings.servings_per_meal;
+    const base = m.servings || dflt;
+    if (m.status !== "planned") return base;
+    const extra = this.state.meals.reduce((n, x) =>
+      (x.status === "leftover" && x.source_meal_id === m.id) ? n + (x.servings || dflt) : n, 0);
+    return base + extra;
+  },
   mealOut(m) {
     const r = m.recipe_id ? this.recipeById(m.recipe_id) : null;
+    const base = m.servings || this.state.settings.servings_per_meal;
+    const eff = this.mealServings(m);
     return { id: m.id, date: m.date, weekday: weekdayOf(m.date), status: m.status, locked: m.locked,
-      servings: m.servings, note: m.note, is_leftover: m.status === "leftover",
+      servings: eff, base_servings: base, extra_for_leftovers: Math.max(0, eff - base),
+      note: m.note, is_leftover: m.status === "leftover",
       recipe: r ? this.recipeBrief(r) : null };
   },
 
@@ -639,9 +654,9 @@ const Store = {
       .map((m) => ({ meal: m, recipe: this.recipeById(m.recipe_id) })).filter((x) => x.recipe);
   },
   aggregate(pairs) {
-    const servings = this.state.settings.servings_per_meal, agg = {};
-    for (const { recipe } of pairs) {
-      const scale = servings / Math.max(recipe.servings, 1);
+    const dflt = this.state.settings.servings_per_meal, agg = {};
+    for (const { meal, recipe } of pairs) {
+      const scale = (meal ? this.mealServings(meal) : dflt) / Math.max(recipe.servings, 1);
       for (const ing of recipe.ingredients || []) {
         const key = norm(ing.name) + "|" + ing.unit;
         if (!agg[key]) agg[key] = { name: ing.name, unit: ing.unit, category: ing.category, is_meat: ing.is_meat,

@@ -141,6 +141,7 @@ function dayRow(m, today) {
     meta = "No cooking or shopping needed" + (r ? ` · ${r.kj} kJ/serve · ${r.protein_g} g protein/serve` : ""); }
   else if (r) { title = r.title; viewId = r.id;
     meta = `${r.total_min} min (prep ${r.prep_min} + cook ${r.cook_min}) · ${r.kj} kJ/serve · ${r.protein_g} g protein/serve`
+      + (m.extra_for_leftovers > 0 ? ` · cook ${m.servings} serves (double for leftovers)` : "")
       + (r.leftover !== "fresh" ? " · " + (r.leftover === "excellent" ? "excellent leftovers" : "ok leftovers") : "");
     tags = (r.tags || []).slice(0, 3).map((t) => `<span class="tag">${t}</span>`).join(""); }
   else { title = "— empty —"; meta = "Regenerate or drag a meal here"; }
