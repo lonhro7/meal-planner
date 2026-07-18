@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en-AU">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#1a2029" />
+  <title>Family Meal Planner</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="icon-180.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Meals" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="app">
+    <div>
+      <h1>Family Meal Planner</h1>
+      <div class="sub" id="subtitle">Rolling 4-week plan · metric · dinners</div>
+    </div>
+    <button class="btn small" id="offlineFlag" title="On-device — works offline">●</button>
+  </header>
+
+  <main>
+    <section id="tab-plan"></section>
+    <section id="tab-shopping" class="hidden"></section>
+    <section id="tab-pantry" class="hidden"></section>
+    <section id="tab-recipes" class="hidden"></section>
+    <section id="tab-settings" class="hidden"></section>
+  </main>
+
+  <nav class="tabs">
+    <button data-tab="plan" class="active"><span class="ic">🗓️</span>Plan</button>
+    <button data-tab="shopping"><span class="ic">🛒</span>Shopping</button>
+    <button data-tab="pantry"><span class="ic">🥩</span>Pantry</button>
+    <button data-tab="recipes"><span class="ic">📖</span>Recipes</button>
+    <button data-tab="settings"><span class="ic">⚙️</span>Settings</button>
+  </nav>
+
+  <div class="cook" id="cook">
+    <header>
+      <div class="t" id="cookTitle">Recipe</div>
+      <div class="serves">
+        <span class="small muted">Serves</span>
+        <button class="btn small" id="servesDown">−</button>
+        <span id="servesVal">4</span>
+        <button class="btn small" id="servesUp">+</button>
+        <button class="btn small" id="cookClose">✕</button>
+      </div>
+    </header>
+    <div class="step-wrap">
+      <div class="step-num" id="stepNum">Step 1</div>
+      <div class="step-text" id="stepText"></div>
+      <div class="step-ings"><h4>Ingredients for this step</h4><div id="stepIngs"></div></div>
+    </div>
+    <footer>
+      <button class="btn" id="prevStep">◀ Back</button>
+      <button class="btn primary" id="nextStep">Next ▶</button>
+    </footer>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="seed.js"></script>
+  <script src="store.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
