@@ -16,6 +16,24 @@ const LEFTOVER_SCORE = { fresh: 0, ok: 2, excellent: 3 };
 function leftoverScore(r) { return LEFTOVER_SCORE[(r && r.leftover) || "fresh"] || 0; }
 const MEAT_TYPES = ["Beef","Chicken","Lamb","Pork","Sausage","Smallgoods","Fish","Other"];
 const LEFTOVER_LABELS = { fresh: "Best fresh", ok: "OK leftovers", excellent: "Excellent leftovers" };
+// day-preference options (multi-select). "nocook" = no cooking that night; "slowcook" =
+// something you can prep early and slow-cook / finish in 10-15 min when home.
+const DAY_PREF_OPTIONS = [["quick","Quick & easy"],["long","Long cook OK"],["slowcook","Early prep / slow cook"],["leftover","Leftover night"],["light","Light (lower kJ)"],["nocook","No cook"]];
+const AVG_SAUSAGE_KG = 0.1;  // assumed weight per sausage, for $/kg pricing of sausages
+// recommended max freezer storage (months) by meat type / cut — used to auto-set best-before
+function freezerMonths(type, cut) {
+  type = (type || "").toLowerCase(); cut = (cut || "").toLowerCase();
+  if (cut.includes("mince")) return 3;
+  if (type === "sausage") return 2;
+  if (type === "smallgoods") return 1;
+  if (type === "salmon") return 3;
+  if (type === "fish") return 4;
+  if (type === "chicken") return cut.includes("whole") ? 12 : 9;
+  if (type === "pork") return 6;
+  if (type === "lamb") return 8;
+  if (type === "beef") return 8;
+  return 6;
+}
 
 // ------------------------------------------------------------- persistence
 function openDB() {
@@ -54,6 +72,7 @@ function weekdayOf(iso) { return parseISO(iso).getDay(); }               // 0 Su
 function mostRecentWeekStart(iso, startDay) { const d = parseISO(iso); const diff = (d.getDay() - startDay + 7) % 7; d.setDate(d.getDate() - diff); return isoLocal(d); }
 function addDays(iso, n) { const d = parseISO(iso); d.setDate(d.getDate() + n); return isoLocal(d); }
 function daysBetween(a, b) { return Math.round((parseISO(b) - parseISO(a)) / 86400000); }
+function addMonthsISO(iso, months) { const d = parseISO(iso); d.setMonth(d.getMonth() + months); return isoLocal(d); }
 function clone(o) { return JSON.parse(JSON.stringify(o)); }
 function norm(s) { return (s || "").trim().toLowerCase(); }
 function cutMatch(a, b) { a = norm(a); b = norm(b); if (!a || !b) return true; return a === b || a.includes(b) || b.includes(a); }
@@ -79,7 +98,13 @@ const Store = {
   migrate() {
     const s = this.state.settings;
     if (s.week_start_day == null) s.week_start_day = 0;
-    if (!s.day_prefs) s.day_prefs = { 0:"any",1:"any",2:"any",3:"any",4:"any",5:"any",6:"any" };
+    if (!s.day_prefs) s.day_prefs = { 0:[],1:[],2:[],3:[],4:[],5:[],6:[] };
+    // convert any old single-string day prefs to arrays ("any" -> [])
+    for (let d = 0; d < 7; d++) {
+      const v = s.day_prefs[d];
+      if (v == null) s.day_prefs[d] = [];
+      else if (typeof v === "string") s.day_prefs[d] = v === "any" ? [] : [v];
+    }
     if (!s.leftover_mode || s.leftover_mode === "dinners") s.leftover_mode = "auto";
     if (s.high_protein_g == null) s.high_protein_g = 30;
     if (s.low_carb_g == null) s.low_carb_g = 30;
@@ -87,8 +112,12 @@ const Store = {
     (this.state.pantry || []).forEach((p) => {
       if (p.location == null) p.location = p.is_meat ? "freezer" : "pantry";
       if (p.special_occasion == null) p.special_occasion = false;
+      if (p.purchase_date === undefined) p.purchase_date = "";
+      if (p.best_before === undefined) p.best_before = "";
     });
   },
+  DAY_PREF_OPTIONS,
+  freezerMonths,
 
   freshState() {
     const recipes = SEED_RECIPES.map((r, i) => ({ id: i + 1, liked: 0, times_cooked: 0, ...clone(r) }));
@@ -100,7 +129,7 @@ const Store = {
         household_adults: 2, household_children: 2, servings_per_meal: 4,
         weekly_budget: 0, leftover_mode: "auto", week_start_day: 0,
         high_protein_g: 30, low_carb_g: 30, meat_prices: {},
-        day_prefs: { 0:"any",1:"any",2:"any",3:"any",4:"any",5:"any",6:"any" },
+        day_prefs: { 0:[],1:[],2:[],3:[],4:[],5:[],6:[] },
       },
       seq: { recipe: recipes.length + 1, pantry: 1, meal: 1 },
     };
@@ -132,12 +161,13 @@ const Store = {
   searchRecipes(opts = {}) {
     const servings = this.state.settings.servings_per_meal;
     const terms = (opts.text || "").toLowerCase().split(/[,\n]/).map((s) => s.trim()).filter(Boolean);
-    const f = { high_protein: opts.high_protein, low_carb: opts.low_carb, dairy: opts.dairy,
+    const f = { high_protein: opts.high_protein, low_carb: opts.low_carb, dairy_levels: opts.dairy_levels || [],
       leftover_levels: opts.leftover_levels || [], include_tags: opts.tags || [], exclude_tags: opts.exclude_tags || [],
       max_prep_min: opts.max_prep_min, max_cook_min: opts.max_cook_min };
     let out = this.state.recipes.filter((r) => {
       if (opts.favourited && (r.liked || 0) !== 1) return false;
       if (opts.uses_freezer && !this.usesFreezerMeat(r)) return false;
+      if (opts.uses_fridge && !this.usesFridgeMeat(r)) return false;
       if (!this.matchesFilter(r, f, servings)) return false;
       if (terms.length) {
         const hay = (r.title + " " + (r.ingredients || []).map((i) => i.name).join(" ") + " " + (r.tags || []).join(" ")).toLowerCase();
@@ -145,7 +175,7 @@ const Store = {
       }
       return true;
     });
-    return out.map((r) => ({ ...this.recipeBrief(r), uses_freezer: this.usesFreezerMeat(r) }))
+    return out.map((r) => ({ ...this.recipeBrief(r), uses_freezer: this.usesFreezerMeat(r), uses_fridge: this.usesFridgeMeat(r) }))
       .sort((a, b) => (b.liked - a.liked) || a.title.localeCompare(b.title));
   },
   async addRecipe(data) {
@@ -168,11 +198,23 @@ const Store = {
   },
   async addPantry(item) {
     const id = this.state.seq.pantry++;
-    const p = { id, name: item.name || "", category: item.category || "meat", is_meat: item.is_meat !== false,
+    const isMeat = item.is_meat !== false;
+    const location = item.location || (isMeat ? "freezer" : "pantry");
+    let best_before = item.best_before || "";
+    // auto best-before for freezer meat when a purchase date is given
+    if (!best_before && item.purchase_date && isMeat && location === "freezer") {
+      best_before = addMonthsISO(item.purchase_date, freezerMonths(item.meat_type, item.meat_cut));
+    }
+    const p = { id, name: item.name || "", category: item.category || "meat", is_meat: isMeat,
       meat_type: item.meat_type || "", meat_cut: item.meat_cut || "", quantity: item.quantity || 0,
-      unit: item.unit || "g", location: item.location || (item.is_meat === false ? "pantry" : "freezer"),
-      special_occasion: !!item.special_occasion };
+      unit: item.unit || "g", location, special_occasion: !!item.special_occasion,
+      purchase_date: item.purchase_date || "", best_before };
     this.state.pantry.push(p); await this.persist(); return id;
+  },
+  // preview the auto best-before a freezer meat item would get (for the UI)
+  autoBestBefore(meat_type, meat_cut, purchase_date, location) {
+    if (!purchase_date || location !== "freezer") return "";
+    return addMonthsISO(purchase_date, freezerMonths(meat_type, meat_cut));
   },
   async deletePantry(id) { this.state.pantry = this.state.pantry.filter((p) => p.id !== id); await this.persist(); },
   // meat types available to the auto-planner (excludes special-occasion, reserved stock)
@@ -200,14 +242,20 @@ const Store = {
     else this.state.settings.meat_prices[key] = Number(value);
     await this.persist();
   },
-  freezerMeatTypes() {
+  locationMeatTypes(location) {
     const set = new Set();
-    this.state.pantry.forEach((p) => { if (p.is_meat && !p.special_occasion && p.quantity > 0 && p.location === "freezer") set.add(norm(p.meat_type)); });
+    this.state.pantry.forEach((p) => { if (p.is_meat && !p.special_occasion && p.quantity > 0 && p.location === location) set.add(norm(p.meat_type)); });
     return set;
   },
+  freezerMeatTypes() { return this.locationMeatTypes("freezer"); },
+  fridgeMeatTypes() { return this.locationMeatTypes("fridge"); },
   usesFreezerMeat(recipe) {
     const fz = this.freezerMeatTypes(); if (!fz.size) return false;
     return (recipe.ingredients || []).some((i) => i.is_meat && fz.has(norm(i.meat_type)));
+  },
+  usesFridgeMeat(recipe) {
+    const fr = this.fridgeMeatTypes(); if (!fr.size) return false;
+    return (recipe.ingredients || []).some((i) => i.is_meat && fr.has(norm(i.meat_type)));
   },
   // meat types the whole current plan needs (for the freezer summary "in use" flag)
   planMeatTypes() {
@@ -217,14 +265,19 @@ const Store = {
       (recipe.ingredients || []).forEach((i) => { if (i.is_meat) set.add(norm(i.meat_type)); }));
     return set;
   },
-  freezerSummary() {
+  locationSummary(location) {
     const used = this.planMeatTypes();
-    const items = this.state.pantry.filter((p) => p.location === "freezer")
-      .map((p) => ({ display: this.displayName(p), meat_type: p.meat_type, quantity: p.quantity, unit: p.unit,
-        special_occasion: !!p.special_occasion, used_by_plan: p.is_meat && used.has(norm(p.meat_type)) }))
+    const today = todayISO();
+    const items = this.state.pantry.filter((p) => p.location === location)
+      .map((p) => ({ id: p.id, display: this.displayName(p), meat_type: p.meat_type, quantity: p.quantity, unit: p.unit,
+        special_occasion: !!p.special_occasion, best_before: p.best_before || "",
+        days_left: p.best_before ? daysBetween(today, p.best_before) : null,
+        used_by_plan: p.is_meat && used.has(norm(p.meat_type)) }))
       .sort((a, b) => a.display.localeCompare(b.display));
     return { items, any: items.length > 0 };
   },
+  freezerSummary() { return this.locationSummary("freezer"); },
+  fridgeSummary() { return this.locationSummary("fridge"); },
 
   // ---------------------------------------------------------- plan lifecycle
   mealByDate(date) { return this.state.meals.find((m) => m.date === date); },
@@ -278,8 +331,8 @@ const Store = {
     if (f.high_protein && (r.protein_g || 0) < hp) return false;
     if (f.low_carb && (r.carbs_g || 0) > lc) return false;
     if (f.kid_friendly_only && !r.kid_friendly) return false;
-    if (f.dairy === "free" && r.dairy !== "free") return false;
-    if (f.dairy === "free_or_replaceable" && !(r.dairy === "free" || r.dairy === "replaceable")) return false;
+    // dairy_levels: multi-select of "free" / "replaceable"; empty = any
+    if ((f.dairy_levels || []).length && !f.dairy_levels.includes(r.dairy || "required")) return false;
     const tags = new Set(r.tags || []);
     if ((f.include_tags || []).length && !f.include_tags.every((t) => tags.has(t))) return false;
     if ((f.exclude_tags || []).some((t) => tags.has(t))) return false;
@@ -296,17 +349,26 @@ const Store = {
     out.max_cost = tighterMax(base.max_cost, add.max_cost);
     out.min_cook_min = tighterMin(base.min_cook_min, add.min_cook_min);
     out.leftover_levels = base.leftover_levels || [];
+    out.dairy_levels = base.dairy_levels || [];
     out.weight_loss_focus = base.weight_loss_focus || add.weight_loss_focus;
     out.high_protein = base.high_protein || add.high_protein;
     out.low_carb = base.low_carb || add.low_carb;
-    if (add.dairy && add.dairy !== "any") out.dairy = add.dairy;
+    // include-tag requirements from presets (e.g. slow-cook) accumulate
+    out.include_tags = [...new Set([...(base.include_tags || []), ...(add.include_tags || [])])];
     return out;
   },
   presetFilter(pref) {
     if (pref === "quick") return { max_prep_min: 15, max_cook_min: 25 };
     if (pref === "long") return { min_cook_min: 45 };
+    if (pref === "slowcook") return { include_tags: ["slow-cook"] };
     if (pref === "light") return { weight_loss_focus: true };
     return {};
+  },
+  // merge a day's list of prefs into one effective filter on top of the base
+  applyDayPrefs(base, prefs) {
+    let eff = { ...base };
+    (prefs || []).forEach((p) => { eff = this.mergeFilters(eff, this.presetFilter(p)); });
+    return eff;
   },
   candidates(f, servings) {
     const ok = this.state.recipes.filter((r) => this.matchesFilter(r, f, servings));
@@ -332,6 +394,8 @@ const Store = {
     const s = this.state.settings, servings = s.servings_per_meal, availMeats = this.availableMeatTypes();
     this.getPlan();
     const byDate = {}; this.state.meals.forEach((m) => (byDate[m.date] = m));
+    // release any previous "no cook" preference days so they can be re-evaluated
+    dates.forEach((d) => { const m = byDate[d]; if (m && m.status === "away" && m.note === "nocook-pref") { m.status = "empty"; m.note = ""; } });
     const targetDates = new Set();
     dates.forEach((d) => { const m = byDate[d]; if (m && !m.locked && m.status !== "away") targetDates.add(d); });
     this.state.meals.forEach((m) => { if (targetDates.has(m.date)) { m.recipe_id = null; m.source_meal_id = null; m.status = "empty"; } });
@@ -364,18 +428,21 @@ const Store = {
       if (!targetDates.has(m.date)) continue;
 
       // target slot to fill
-      const pref = (s.day_prefs && s.day_prefs[weekdayOf(m.date)]) || "any";
+      const prefs = (s.day_prefs && s.day_prefs[weekdayOf(m.date)]) || [];
+
+      // "no cook" night — leave it as a no-cook slot (excluded from shopping)
+      if (prefs.includes("nocook")) { m.status = "away"; m.recipe_id = null; m.source_meal_id = null; m.note = "nocook-pref"; lastProtein = ""; continue; }
 
       if (pendingAuto && daysBetween(pendingAuto.date, m.date) >= 1 && daysBetween(pendingAuto.date, m.date) <= 3) {
         const src = this.mealById(pendingAuto.mealId);
         if (src && src.recipe_id) { placeLeftover(m, src); pendingAuto = null; filled++; continue; }
         pendingAuto = null;
       }
-      if (pref === "leftover") {
+      if (prefs.includes("leftover")) {
         const src = recentSource(m.date);
         if (src) { placeLeftover(m, src); filled++; continue; }
       }
-      const eff = this.mergeFilters(filt || {}, this.presetFilter(pref));
+      const eff = this.applyDayPrefs(filt || {}, prefs);
       let choice = this.pick(this.candidates(eff, servings), recent.slice(-4), lastProtein, availMeats);
       if (!choice) choice = this.pick(this.candidates(filt || {}, servings), recent.slice(-4), lastProtein, availMeats);
       if (!choice) continue;

@@ -5,14 +5,15 @@ const $ = (id) => document.getElementById(id);
 const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const DOW_FULL = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
 const MON = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-const DAY_PREFS = [["any","Any"],["quick","Quick & easy"],["long","Time for a long cook"],["light","Light & healthy"],["leftover","Leftover night"]];
+const DAIRY_LEVELS = [["free","Dairy-free"],["replaceable","Dairy replaceable"]];
+const SAUSAGE_KG = 0.1;  // assumed weight per sausage, for $/kg pricing
 const state = {
   cook: { recipe: null, step: 0, servings: 4 },
   filter: { max_prep_min: null, max_cook_min: null, max_kj: null, max_cost: null,
-    weight_loss_focus: false, high_protein: false, low_carb: false, dairy: "any",
+    weight_loss_focus: false, high_protein: false, low_carb: false, dairy_levels: [],
     leftover_levels: [], exclude_tags: [] },
-  search: { text: "", favourited: false, uses_freezer: false, high_protein: false,
-    low_carb: false, dairy: "any", leftover_levels: [] },
+  search: { text: "", favourited: false, uses_freezer: false, uses_fridge: false, high_protein: false,
+    low_carb: false, dairy_levels: [], leftover_levels: [] },
 };
 
 function toast(msg) { const t = $("toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("show"), 1900); }
@@ -69,14 +70,12 @@ function renderPlan() {
             <button type="button" class="chip ${f.high_protein?"on":""}" data-tg="high_protein">High protein</button>
             <button type="button" class="chip ${f.low_carb?"on":""}" data-tg="low_carb">Low carb</button>
           </div></div>
-        <div class="row"><label class="f">Dairy<select id="f_dairy">
-          <option value="any" ${f.dairy==="any"?"selected":""}>Any</option>
-          <option value="free" ${f.dairy==="free"?"selected":""}>Dairy-free only</option>
-          <option value="free_or_replaceable" ${f.dairy==="free_or_replaceable"?"selected":""}>Dairy-free or replaceable</option></select></label>
-          <label class="f grow">Exclude tags (comma)<input id="f_exclude" type="text" value="${f.exclude_tags.join(", ")}" placeholder="fish, pork"></label></div>
+        <div class="fl"><span class="fl-label">Dairy (pick any)</span><div class="chips">
+          ${DAIRY_LEVELS.map(([k,l]) => `<button type="button" class="chip ${f.dairy_levels.includes(k)?"on":""}" data-dl="${k}">${l}</button>`).join("")}</div></div>
+        <div class="row"><label class="f grow">Exclude tags (comma)<input id="f_exclude" type="text" value="${f.exclude_tags.join(", ")}" placeholder="fish, pork"></label></div>
       </div></details></div></div>`;
 
-  html += freezerCardHtml();
+  html += locationCardHtml("fridge") + locationCardHtml("freezer");
 
   p.weeks.forEach((w, wi) => {
     html += `<div class="week-title">Week ${wi + 1} — from ${fmtLong(w.week_start)} ${wi === 0 ? "· this week" : ""}
@@ -90,7 +89,10 @@ function renderPlan() {
   // filter bindings (persist into state.filter)
   const numBind = (id, key) => { const el = $(id); if (el) el.oninput = () => { const v = el.value.trim(); state.filter[key] = v === "" ? null : Number(v); }; };
   numBind("f_prep","max_prep_min"); numBind("f_cook","max_cook_min"); numBind("f_kj","max_kj"); numBind("f_cost","max_cost");
-  const dsel = $("f_dairy"); if (dsel) dsel.onchange = () => state.filter.dairy = dsel.value;
+  document.querySelectorAll("[data-dl]").forEach((b) => b.onclick = () => {
+    const k = b.dataset.dl, arr = state.filter.dairy_levels, i = arr.indexOf(k);
+    if (i >= 0) arr.splice(i, 1); else arr.push(k); b.classList.toggle("on");
+  });
   const exc = $("f_exclude"); if (exc) exc.oninput = () => state.filter.exclude_tags = exc.value.split(",").map((s)=>s.trim()).filter(Boolean);
   document.querySelectorAll("[data-lv]").forEach((b) => b.onclick = () => {
     const k = b.dataset.lv, arr = state.filter.leftover_levels, i = arr.indexOf(k);
@@ -104,14 +106,25 @@ function renderPlan() {
   document.querySelectorAll(".weekcard").forEach((card) => makeSortable(card, () => commitReorder(card)));
 }
 
-function freezerCardHtml() {
-  const fz = Store.freezerSummary();
+function bestBeforeLabel(it) {
+  if (!it.best_before) return "";
+  const d = it.days_left;
+  if (d == null) return "";
+  if (d < 0) return `<span class="pill bad" style="margin-left:6px">expired</span>`;
+  if (d <= 7) return `<span class="pill bad" style="margin-left:6px">use in ${d}d</span>`;
+  if (d <= 30) return `<span class="pill" style="margin-left:6px">best before ${fmtLong(it.best_before)}</span>`;
+  return `<span class="small muted" style="margin-left:6px">best before ${fmtLong(it.best_before)}</span>`;
+}
+function locationCardHtml(location) {
+  const icon = location === "fridge" ? "🧊" : "❄️";
+  const title = location === "fridge" ? "In the fridge" : "In the freezer";
+  const sum = location === "fridge" ? Store.fridgeSummary() : Store.freezerSummary();
   let inner;
-  if (!fz.any) inner = `<div class="small muted">No freezer stock recorded. Add it under <b>Pantry</b> (set location to Freezer) and the planner will lean toward using it.</div>`;
-  else inner = fz.items.map((it) => `<div class="list-item"><span class="name">❄️ ${it.display}
-      ${it.special_occasion ? '<span class="small muted">· ⭐ reserved</span>' : (it.used_by_plan ? '<span class="pill good" style="margin-left:6px">in this plan</span>' : "")}</span>
+  if (!sum.any) inner = `<div class="small muted">Nothing in the ${location}. Add stock under <b>Pantry</b> (set location to ${location === "fridge" ? "Fridge" : "Freezer"}).</div>`;
+  else inner = sum.items.map((it) => `<div class="list-item"><span class="name">${icon} ${it.display}
+      ${it.special_occasion ? '<span class="small muted">· ⭐ reserved</span>' : (it.used_by_plan ? '<span class="pill good" style="margin-left:6px">in this plan</span>' : "")}${bestBeforeLabel(it)}</span>
       <span class="qty">${qtyLabelSmart(it.quantity, it.unit)}</span></div>`).join("");
-  return `<details class="card" open><summary style="font-weight:600;font-size:15px;color:var(--text)">🧊 In the freezer</summary>
+  return `<details class="card" open><summary style="font-weight:600;font-size:15px;color:var(--text)">${icon} ${title}</summary>
     <div style="margin-top:8px">${inner}</div></details>`;
 }
 
@@ -122,7 +135,7 @@ function dayRow(m, today) {
   if (m.status === "leftover") cls.push("leftover");
   const draggable = !m.locked && (m.status === "planned" || m.status === "empty");
   let title, meta = "", tags = "";
-  if (m.status === "away") title = "Away / no cook needed";
+  if (m.status === "away") { title = m.note === "nocook-pref" ? "🚫 No cook night" : "✈ Away / no cook needed"; if (m.note === "nocook-pref") meta = "Day preference: no cooking"; }
   else if (m.status === "leftover") { title = "♻ Leftovers" + (m.recipe ? " — " + m.recipe.title : ""); meta = "No cooking or shopping needed"; }
   else if (m.recipe) { title = m.recipe.title;
     meta = `${m.recipe.total_min} min · ${m.recipe.kj} kJ/serve` + (m.recipe.leftover !== "fresh" ? " · " + (m.recipe.leftover === "excellent" ? "excellent leftovers" : "ok leftovers") : "");
@@ -252,7 +265,7 @@ function renderPantry() {
     <div class="small muted" style="margin-bottom:8px">Meat here is checked against the plan to build the meat-to-buy list. The planner also leans toward using what's in your freezer.</div>`;
   if (!items.length) html += `<div class="empty-note">Nothing recorded yet. Add stock below.</div>`;
   items.forEach((p) => { html += `<div class="list-item"><span class="name">${p.display}
-    <div class="small muted">${p.location}${p.special_occasion ? " · ⭐ special occasion" : ""}</div></span>
+    <div class="small muted">${p.location}${p.special_occasion ? " · ⭐ special occasion" : ""}${p.best_before ? " · best before " + fmtLong(p.best_before) : ""}</div></span>
     <span class="qty">${qtyLabelSmart(p.quantity, p.unit)}</span>
     <button class="btn small" data-delpantry="${p.id}">✕</button></div>`; });
   html += `</div>`;
@@ -265,29 +278,51 @@ function renderPantry() {
       <label class="f grow" id="nameField" style="display:none">Name<input id="p_name" placeholder="e.g. Passata"></label></div>
     <div class="row" id="meatFields">
       <label class="f">Meat type<select id="p_mtype">${typeOpts}</select></label>
-      <label class="f grow">Cut<input id="p_mcut" placeholder="mince / thigh / chuck…"></label></div>
+      <label class="f grow" id="cutLabel">Cut<input id="p_mcut" list="cutList" placeholder="mince / thigh / chuck…"></label></div>
+    <datalist id="cutList"></datalist>
     <div class="row">
       <label class="f">Quantity<input id="p_qty" type="number" step="any" value="0" style="width:100px"></label>
       <label class="f">Unit<select id="p_unit"><option>g</option><option>kg</option><option>ml</option><option>l</option>
         <option>whole</option><option>can</option><option>tbsp</option><option>tsp</option><option>cup</option></select></label>
       <label class="f">Location<select id="p_loc"><option value="freezer">Freezer</option><option value="fridge">Fridge</option><option value="pantry">Pantry</option></select></label></div>
+    <div class="row">
+      <label class="f">Purchase date (optional)<input id="p_pdate" type="date"></label>
+      <label class="f">Best before (optional)<input id="p_bbdate" type="date"></label></div>
+    <div class="small muted" id="bbHint" style="margin:2px 0 6px"></div>
     <label class="f" style="flex-direction:row;align-items:center;gap:8px;margin:6px 0">
       <input id="p_special" type="checkbox"> ⭐ Special occasion (kept aside — the auto-planner won't use this stock)</label>
     <button class="btn primary" id="addPantry">Add to stock</button></div>`;
   $("tab-pantry").innerHTML = html;
 
   const catSel = $("p_cat");
-  const toggle = () => { const meat = catSel.value === "meat"; $("meatFields").style.display = meat ? "flex" : "none"; $("nameField").style.display = meat ? "none" : "flex"; $("p_loc").value = meat ? "freezer" : "pantry"; };
+  const SAUSAGE_FLAVOURS = ["Plain","Flavoured","Pork & fennel","Beef","Chicken","Italian","Chorizo","Bratwurst","Cheese kransky","Lamb & rosemary","Honey & garlic"];
+  const CUTS = ["mince","thigh fillet","thigh cutlet","breast","drumstick","wings","whole","chuck","rump","porterhouse steak","scotch fillet","stir-fry strips","loin","belly","shoulder","leg","cutlet","fillet","bacon","sliced ham","chorizo","white fillet","prawn"];
+  const updateCut = () => {
+    const t = $("p_mtype").value;
+    const sausage = t === "Sausage";
+    $("cutLabel").firstChild.textContent = sausage ? "Flavour" : "Cut";
+    $("p_mcut").placeholder = sausage ? "plain / pork & fennel / flavoured…" : "mince / thigh / chuck…";
+    $("cutList").innerHTML = (sausage ? SAUSAGE_FLAVOURS : CUTS).map((c) => `<option value="${c}">`).join("");
+  };
+  const updateBB = () => {
+    const auto = Store.autoBestBefore($("p_mtype").value, $("p_mcut").value, $("p_pdate").value, $("p_loc").value);
+    if (auto && !$("p_bbdate").value) { $("p_bbdate").value = auto;
+      $("bbHint").innerHTML = `Auto best-before <b>${fmtLong(auto)}</b> (max recommended freezer time). Edit above to override.`; }
+    else if (!auto) $("bbHint").textContent = "";
+  };
+  const toggle = () => { const meat = catSel.value === "meat"; $("meatFields").style.display = meat ? "flex" : "none"; $("nameField").style.display = meat ? "none" : "flex"; $("p_loc").value = meat ? "freezer" : "pantry"; if (meat) updateCut(); };
   catSel.onchange = toggle; toggle();
+  $("p_mtype").onchange = () => { updateCut(); $("p_bbdate").value = ""; updateBB(); };
+  $("p_pdate").onchange = updateBB; $("p_loc").onchange = () => { $("p_bbdate").value = ""; updateBB(); };
   $("addPantry").onclick = async () => {
     const isMeat = catSel.value === "meat";
+    const base = { quantity: Number($("p_qty").value) || 0, unit: $("p_unit").value, location: $("p_loc").value,
+      special_occasion: $("p_special").checked, purchase_date: $("p_pdate").value, best_before: $("p_bbdate").value };
     const body = isMeat
-      ? { category: "meat", is_meat: true, meat_type: $("p_mtype").value, meat_cut: $("p_mcut").value.trim(),
-          quantity: Number($("p_qty").value) || 0, unit: $("p_unit").value, location: $("p_loc").value, special_occasion: $("p_special").checked }
-      : { category: catSel.value, is_meat: false, name: $("p_name").value.trim(),
-          quantity: Number($("p_qty").value) || 0, unit: $("p_unit").value, location: $("p_loc").value, special_occasion: $("p_special").checked };
+      ? { ...base, category: "meat", is_meat: true, meat_type: $("p_mtype").value, meat_cut: $("p_mcut").value.trim() }
+      : { ...base, category: catSel.value, is_meat: false, name: $("p_name").value.trim() };
     if (!isMeat && !body.name) { toast("Enter a name"); return; }
-    if (isMeat && !body.meat_cut) { toast("Enter a cut"); return; }
+    if (isMeat && !body.meat_cut) { toast("Enter a cut/flavour"); return; }
     await Store.addPantry(body); toast("Added to stock"); renderPantry();
   };
   document.querySelectorAll("[data-delpantry]").forEach((b) => b.onclick = async () => { await Store.deletePantry(Number(b.dataset.delpantry)); renderPantry(); });
@@ -324,13 +359,11 @@ function renderRecipes() {
   let html = `<div class="card"><h2>Find a recipe</h2>
     <input id="q_text" type="text" placeholder="Search by name or ingredient (e.g. mince, prawn)…" value="${s.text.replace(/"/g,"&quot;")}" style="width:100%">
     <div class="chips" style="margin-top:10px">
-      ${chip("favourited","Favourites","⭐ ")}${chip("uses_freezer","Uses freezer meat","❄️ ")}
+      ${chip("favourited","Favourites","⭐ ")}${chip("uses_fridge","Uses fridge meat","🧊 ")}${chip("uses_freezer","Uses freezer meat","❄️ ")}
       ${chip("high_protein","High protein")}${chip("low_carb","Low carb")}</div>
     <div class="fl" style="margin-top:8px"><span class="fl-label">Leftovers</span><div class="chips">${lv("fresh","Best fresh")}${lv("ok","OK")}${lv("excellent","Excellent")}</div></div>
-    <div class="row"><label class="f">Dairy<select id="q_dairy">
-      <option value="any" ${s.dairy==="any"?"selected":""}>Any</option>
-      <option value="free" ${s.dairy==="free"?"selected":""}>Dairy-free only</option>
-      <option value="free_or_replaceable" ${s.dairy==="free_or_replaceable"?"selected":""}>Dairy-free or replaceable</option></select></label></div>
+    <div class="fl"><span class="fl-label">Dairy (pick any)</span><div class="chips">
+      ${DAIRY_LEVELS.map(([k,l]) => `<button type="button" class="chip ${s.dairy_levels.includes(k)?"on":""}" data-sdl="${k}">${l}</button>`).join("")}</div></div>
   </div>
   <div id="searchResults"></div>
   <details class="card"><summary style="font-weight:600;font-size:15px;color:var(--text)">➕ Add your own recipe</summary>
@@ -355,9 +388,9 @@ function renderRecipes() {
 
   const results = () => renderSearchResults(total);
   $("q_text").oninput = (e) => { s.text = e.target.value; results(); };
-  $("q_dairy").onchange = (e) => { s.dairy = e.target.value; results(); };
   document.querySelectorAll("[data-sf]").forEach((b) => b.onclick = () => { s[b.dataset.sf] = !s[b.dataset.sf]; b.classList.toggle("on"); results(); });
   document.querySelectorAll("[data-slv]").forEach((b) => b.onclick = () => { const k = b.dataset.slv, i = s.leftover_levels.indexOf(k); if (i>=0) s.leftover_levels.splice(i,1); else s.leftover_levels.push(k); b.classList.toggle("on"); results(); });
+  document.querySelectorAll("[data-sdl]").forEach((b) => b.onclick = () => { const k = b.dataset.sdl, i = s.dairy_levels.indexOf(k); if (i>=0) s.dairy_levels.splice(i,1); else s.dairy_levels.push(k); b.classList.toggle("on"); results(); });
   $("addRecipe").onclick = async () => {
     const title = $("r_title").value.trim(); if (!title) { toast("Enter a title"); return; }
     const ings = $("r_ings").value.split("\n").map(parseIngredientLine).filter(Boolean);
@@ -374,7 +407,7 @@ function renderSearchResults(total) {
   const list = Store.searchRecipes(state.search);
   let html = `<div class="card"><h2>Matches (${list.length} of ${total})</h2>`;
   if (!list.length) html += `<div class="empty-note">No recipes match. Try fewer filters.</div>`;
-  list.slice(0, 200).forEach((r) => { html += `<div class="list-item"><span class="name">${r.liked===1?"⭐ ":""}${r.uses_freezer?"❄️ ":""}${r.title}
+  list.slice(0, 200).forEach((r) => { html += `<div class="list-item"><span class="name">${r.liked===1?"⭐ ":""}${r.uses_fridge?"🧊 ":""}${r.uses_freezer?"❄️ ":""}${r.title}
     <div class="small muted">${r.total_min} min · ${r.kj} kJ · ${r.leftover_label}</div></span>
     <button class="btn small" data-view="${r.id}">View</button>
     <button class="btn small" data-add="${r.id}">＋ Plan</button>
@@ -389,19 +422,22 @@ function renderSearchResults(total) {
 // ---------------------------------------------------------------- SETTINGS + BACKUP
 function renderSettings() {
   const s = Store.getSettings();
-  const dayOpts = (sel) => DAY_PREFS.map(([v, l]) => `<option value="${v}" ${sel === v ? "selected" : ""}>${l}</option>`).join("");
-  // weekdays listed in the household's week order, starting from week_start_day
+  // weekdays listed in the household's week order, each a multi-select of preferences
   let dayRows = "";
-  for (let i = 0; i < 7; i++) { const wd = (s.week_start_day + i) % 7; dayRows += `<div class="row" style="align-items:center"><span class="grow">${DOW_FULL[wd]}</span>
-    <select data-daypref="${wd}" style="width:190px">${dayOpts((s.day_prefs && s.day_prefs[wd]) || "any")}</select></div>`; }
+  for (let i = 0; i < 7; i++) { const wd = (s.week_start_day + i) % 7; const cur = s.day_prefs[wd] || [];
+    const chips = Store.DAY_PREF_OPTIONS.map(([v, l]) => `<button type="button" class="chip ${cur.includes(v) ? "on" : ""}" data-dpref="${wd}" data-dval="${v}">${l}</button>`).join("");
+    dayRows += `<div class="fl"><span class="fl-label">${DOW_FULL[wd]}</span><div class="chips">${chips}</div></div>`; }
   const weekOpts = [0,1,2,3,4,5,6].map((d) => `<option value="${d}" ${s.week_start_day === d ? "selected" : ""}>${DOW_FULL[d]}</option>`).join("");
   const cap = (x) => x.charAt(0).toUpperCase() + x.slice(1);
   const priceRows = Store.getMeatCuts().map((c) => {
-    const perKg = c.unit === "g";
-    const shown = c.price != null ? (perKg ? c.price * 1000 : c.price) : "";
-    const ph = perKg ? Math.round(c.default_ppu * 1000) : c.default_ppu;
-    return `<div class="row" style="align-items:center;margin-bottom:6px"><span class="grow small">${cap(c.type)} · ${c.cut} <span class="muted">($/${perKg ? "kg" : "each"})</span></span>
-      <input type="number" step="any" data-mp="${c.key}" data-perkg="${perKg ? 1 : 0}" value="${shown}" placeholder="~${ph}" style="width:110px"></div>`;
+    const isSausage = c.type.toLowerCase() === "sausage";
+    const mode = c.unit === "g" ? "gkg" : (isSausage ? "sausage" : "each");   // g→$/kg, sausage whole→$/kg, else $/each
+    const factor = mode === "gkg" ? 1000 : (mode === "sausage" ? (1 / SAUSAGE_KG) : 1);
+    const unitLabel = mode === "each" ? "$/each" : "$/kg";
+    const shown = c.price != null ? Math.round(c.price * factor * 100) / 100 : "";
+    const ph = Math.round(c.default_ppu * factor * 100) / 100;
+    return `<div class="row" style="align-items:center;margin-bottom:6px"><span class="grow small">${cap(c.type)} · ${c.cut} <span class="muted">(${unitLabel})</span></span>
+      <input type="number" step="any" data-mp="${c.key}" data-mode="${mode}" value="${shown}" placeholder="~${ph}" style="width:110px"></div>`;
   }).join("");
 
   $("tab-settings").innerHTML = `<div class="card"><h2>Household</h2>
@@ -410,7 +446,7 @@ function renderSettings() {
       <label class="f">Servings/meal<input id="s_serves" type="number" min="1" value="${s.servings_per_meal}" style="width:90px"></label></div>
     <div class="row"><label class="f">Week starts on<select id="s_weekstart" style="width:150px">${weekOpts}</select></label>
       <label class="f">Weekly budget $ AUD<input id="s_budget" type="number" min="0" value="${s.weekly_budget}" style="width:120px"></label></div>
-    <button class="btn primary" id="saveSettings" style="margin-top:10px">Save</button></div>
+    <div class="small muted" style="margin-top:8px">Changes save automatically.</div></div>
 
     <div class="card"><h2>Leftovers</h2>
     <label class="f">How auto-leftovers work<select id="s_leftover">
@@ -425,11 +461,11 @@ function renderSettings() {
     <div class="small muted" style="margin-top:8px">These set what the High-protein and Low-carb filters mean.</div></div>
 
     <div class="card"><h2>Day preferences</h2>
-    <div class="small muted" style="margin-bottom:8px">Bias each night — e.g. a quick Monday, a long-cook Sunday, a leftover Wednesday.</div>
+    <div class="small muted" style="margin-bottom:8px">Tick any that apply to each night (you can pick more than one). “Light” = lower-kilojoule meals. “Early prep / slow cook” = set-and-forget or a 10–15 min finish when you get home. “No cook” leaves that night free.</div>
     ${dayRows}</div>
 
     <details class="card"><summary style="font-weight:600;font-size:15px;color:var(--text)">🥩 Meat pricing (optional)</summary>
-    <div class="small muted" style="margin:8px 0">Set your Australian Meat Emporium price per cut to make the meat-to-buy total accurate. Blank = use a rough estimate. Prices in AUD.</div>
+    <div class="small muted" style="margin:8px 0">Set your Australian Meat Emporium price per cut to make the meat-to-buy total accurate. Sausages are priced $/kg. Blank = use a rough estimate. Prices in AUD. (Live auto-pricing from the AME site needs the hosted version — a phone app can’t fetch another site directly.)</div>
     ${priceRows || '<div class="small muted">No meat cuts in the library yet.</div>'}</details>
 
     <div class="card"><h2>Backup & restore</h2>
@@ -441,17 +477,17 @@ function renderSettings() {
 
     <div class="card"><h2>About</h2><div class="small muted"><b>Version 1.0</b> · On-device family meal planner. Metric, energy in kJ, prices in AUD. Auto-updates from Netlify. Cost and nutrition figures are estimates.</div></div>`;
 
-  $("saveSettings").onclick = async () => {
-    await Store.saveSettings({ household_adults: +$("s_adults").value || 0, household_children: +$("s_children").value || 0,
-      servings_per_meal: +$("s_serves").value || 4, week_start_day: +$("s_weekstart").value || 0, weekly_budget: +$("s_budget").value || 0 });
-    toast("Settings saved"); renderSettings();
-  };
+  const saveHousehold = async () => { await Store.saveSettings({ household_adults: +$("s_adults").value || 0, household_children: +$("s_children").value || 0,
+    servings_per_meal: +$("s_serves").value || 4, weekly_budget: +$("s_budget").value || 0 }); toast("Saved"); };
+  ["s_adults","s_children","s_serves","s_budget"].forEach((id) => $(id).onchange = saveHousehold);
+  $("s_weekstart").onchange = async () => { await Store.saveSettings({ week_start_day: +$("s_weekstart").value || 0 }); toast("Saved"); renderSettings(); };
   $("s_leftover").onchange = async () => { await Store.saveSettings({ leftover_mode: $("s_leftover").value }); toast("Saved"); };
   $("s_hp").onchange = async () => { await Store.saveSettings({ high_protein_g: +$("s_hp").value || 0 }); toast("Saved"); };
   $("s_lc").onchange = async () => { await Store.saveSettings({ low_carb_g: +$("s_lc").value || 0 }); toast("Saved"); };
-  document.querySelectorAll("[data-daypref]").forEach((sel) => sel.onchange = async () => {
-    const dp = Store.getSettings().day_prefs; dp[sel.dataset.daypref] = sel.value;
-    await Store.saveSettings({ day_prefs: dp }); toast("Day preference saved");
+  document.querySelectorAll("[data-dpref]").forEach((b) => b.onclick = async () => {
+    const wd = b.dataset.dpref, v = b.dataset.dval; const dp = Store.getSettings().day_prefs; const arr = dp[wd] || [];
+    const i = arr.indexOf(v); if (i >= 0) arr.splice(i, 1); else arr.push(v); dp[wd] = arr;
+    b.classList.toggle("on"); await Store.saveSettings({ day_prefs: dp });
   });
   $("exportBtn").onclick = () => {
     const data = JSON.stringify(Store.exportData(), null, 2);
@@ -465,9 +501,12 @@ function renderSettings() {
     reader.readAsText(file); };
   $("resetBtn").onclick = async () => { if (confirm("Reset everything to the starter recipes and a fresh plan? Your changes will be lost.")) { await Store.resetAll(); toast("Reset done"); goTab("plan"); } };
   document.querySelectorAll("[data-mp]").forEach((inp) => inp.onchange = async () => {
-    const perkg = inp.dataset.perkg === "1"; const v = inp.value.trim();
-    if (v === "") await Store.setMeatPrice(inp.dataset.mp, "");
-    else await Store.setMeatPrice(inp.dataset.mp, perkg ? Number(v) / 1000 : Number(v));
+    const mode = inp.dataset.mode; const v = inp.value.trim();
+    if (v === "") { await Store.setMeatPrice(inp.dataset.mp, ""); toast("Price cleared"); return; }
+    let ppu = Number(v);
+    if (mode === "gkg") ppu = ppu / 1000;          // $/kg -> $/g
+    else if (mode === "sausage") ppu = ppu * SAUSAGE_KG; // $/kg -> $/sausage
+    await Store.setMeatPrice(inp.dataset.mp, ppu);
     toast("Price saved");
   });
 }
