@@ -20,6 +20,18 @@ const LEFTOVER_LABELS = { fresh: "Best fresh", ok: "OK leftovers", excellent: "E
 // something you can prep early and slow-cook / finish in 10-15 min when home.
 const DAY_PREF_OPTIONS = [["quick","Quick & easy"],["long","Long cook OK"],["slowcook","Early prep / slow cook"],["leftover","Leftover night"],["light","Light (lower kJ)"],["nocook","No cook"]];
 const AVG_SAUSAGE_KG = 0.1;  // assumed weight per sausage, for $/kg pricing of sausages
+// curated cut lists per meat type (merged with recipe cuts + AME cuts at runtime)
+const CURATED_CUTS = {
+  beef: ["mince","chuck","rump","rump whole","rump steak","porterhouse steak","scotch fillet","eye fillet","eye fillet whole","blade","oyster blade","brisket","topside","silverside","corned silverside","gravy beef","osso bucco","stir-fry strips","minute steak","skirt","flank","short ribs","ribs"],
+  chicken: ["mince","breast","thigh fillet","thigh cutlet","drumstick","wings","whole","tenderloins","maryland"],
+  lamb: ["mince","leg","leg whole","leg steak","shoulder","shank","cutlet","loin chop","forequarter chop","backstrap","rack"],
+  pork: ["mince","loin","loin chop","loin steak","belly","shoulder","scotch fillet","leg","ribs","cutlet","schnitzel steak"],
+  sausage: ["plain","flavoured","pork sausage","beef sausage","pork & fennel","italian","chorizo","chicken","bratwurst","lamb & rosemary","honey & garlic","sausage mince"],
+  smallgoods: ["bacon","sliced ham","ham hock","chorizo","prosciutto","salami","kransky","pancetta"],
+  fish: ["white fillet","barramundi fillet","cod fillet","snapper fillet","whole snapper","prawn","smoked fillet","marinara mix"],
+  salmon: ["fillet","smoked"],
+  other: [],
+};
 // recommended max freezer storage (months) by meat type / cut — used to auto-set best-before
 function freezerMonths(type, cut) {
   type = (type || "").toLowerCase(); cut = (cut || "").toLowerCase();
@@ -89,10 +101,37 @@ const Store = {
     if (!s || !s.recipes) s = this.freshState();
     this.state = s;
     this.migrate();
+    await this.loadAmePrices();
     this.getPlan();
     await this.persist();
     if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
     return this;
+  },
+  // AME default prices (refreshed by a scheduled GitHub Action; overrides still win)
+  async loadAmePrices() {
+    try { const res = await fetch("./data/ame-prices.json", { cache: "no-store" }); if (res.ok) this.amePrices = await res.json(); }
+    catch (_) { /* offline or missing — fall back to estimates */ }
+  },
+  ameKg(type, cut) { const m = this.amePrices && this.amePrices.kg_prices; return m ? m[norm(type) + "|" + norm(cut)] : undefined; },
+  // default price-per-unit for a cut: AME $/kg (if known) converted to the cut's unit, else fallback
+  defaultPPU(type, cut, unit, fallback) {
+    const kg = this.ameKg(type, cut);
+    if (kg == null) return fallback;
+    if (unit === "g") return kg / 1000;
+    if (norm(type) === "sausage") return kg * AVG_SAUSAGE_KG;
+    return fallback;
+  },
+  meatPriceResolved(type, cut, unit, fallback) {
+    const ov = this.state.settings.meat_prices[norm(type) + "|" + norm(cut)];
+    return ov != null ? ov : this.defaultPPU(type, cut, unit, fallback);
+  },
+  // cut options for a meat type (curated ∪ recipe cuts ∪ AME cuts)
+  cutsForType(type) {
+    const t = norm(type);
+    const set = new Set((CURATED_CUTS[t] || []).map((c) => c));
+    this.state.recipes.forEach((r) => (r.ingredients || []).forEach((i) => { if (i.is_meat && norm(i.meat_type) === t && i.meat_cut) set.add(i.meat_cut); }));
+    if (this.amePrices && this.amePrices.kg_prices) Object.keys(this.amePrices.kg_prices).forEach((k) => { const [kt, kc] = k.split("|"); if (kt === t && kc) set.add(kc); });
+    return [...set].map((c) => c.trim()).filter(Boolean).sort((a, b) => a.localeCompare(b));
   },
 
   migrate() {
@@ -229,8 +268,14 @@ const Store = {
     this.state.recipes.forEach((r) => (r.ingredients || []).forEach((i) => {
       if (i.is_meat) { const key = norm(i.meat_type) + "|" + norm(i.meat_cut);
         if (!map[key]) map[key] = { key, type: i.meat_type, cut: i.meat_cut, unit: i.unit,
-          default_ppu: i.price_per_unit, price: this.state.settings.meat_prices[key] }; }
+          default_ppu: this.defaultPPU(i.meat_type, i.meat_cut, i.unit, i.price_per_unit),
+          price: this.state.settings.meat_prices[key], ame: this.ameKg(i.meat_type, i.meat_cut) != null }; }
     }));
+    // add AME cuts not used in any recipe (e.g. whole muscle vs steak) so both can be priced
+    if (this.amePrices && this.amePrices.kg_prices) Object.entries(this.amePrices.kg_prices).forEach(([key, kg]) => {
+      if (!map[key]) { const [type, cut] = key.split("|");
+        map[key] = { key, type, cut, unit: "g", default_ppu: kg / 1000, price: this.state.settings.meat_prices[key], ame: true }; }
+    });
     return Object.values(map).sort((a, b) => (a.type + a.cut).localeCompare(b.type + b.cut));
   },
   meatPrice(type, cut, fallback) {
@@ -544,7 +589,7 @@ const Store = {
       const needed = Math.round(row.needed_qty * 10) / 10;
       const have = Math.round(this.pantryHave(row) * 10) / 10;
       const buy = Math.max(0, Math.round((needed - have) * 10) / 10);
-      const price = row.is_meat ? this.meatPrice(row.meat_type, row.meat_cut, row.price_per_unit) : row.price_per_unit;
+      const price = row.is_meat ? this.meatPriceResolved(row.meat_type, row.meat_cut, row.unit, row.price_per_unit) : row.price_per_unit;
       rows.push({ name: row.is_meat ? [row.meat_type, row.meat_cut].filter(Boolean).join(" · ") || row.name : row.name,
         unit: row.unit, category: row.category, is_meat: row.is_meat, meat_type: row.meat_type, meat_cut: row.meat_cut,
         needed_qty: needed, have_qty: have, buy_qty: buy, est_cost: Math.round(buy * price * 100) / 100, used_in: row.used_in });

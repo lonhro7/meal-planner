@@ -278,10 +278,11 @@ function renderPantry() {
       <label class="f grow" id="nameField" style="display:none">Name<input id="p_name" placeholder="e.g. Passata"></label></div>
     <div class="row" id="meatFields">
       <label class="f">Meat type<select id="p_mtype">${typeOpts}</select></label>
-      <label class="f grow" id="cutLabel">Cut<input id="p_mcut" list="cutList" placeholder="mince / thigh / chuck…"></label></div>
-    <datalist id="cutList"></datalist>
+      <label class="f grow" id="cutLabel">Cut
+        <div class="combo"><input id="p_mcut" autocomplete="off" placeholder="Tap to choose or search…">
+        <div id="cutMenu" class="combo-menu hidden"></div></div></label></div>
     <div class="row">
-      <label class="f">Quantity<input id="p_qty" type="number" step="any" value="0" style="width:100px"></label>
+      <label class="f">Quantity<input id="p_qty" type="number" step="any" inputmode="decimal" placeholder="0" style="width:100px"></label>
       <label class="f">Unit<select id="p_unit"><option>g</option><option>kg</option><option>ml</option><option>l</option>
         <option>whole</option><option>can</option><option>tbsp</option><option>tsp</option><option>cup</option></select></label>
       <label class="f">Location<select id="p_loc"><option value="freezer">Freezer</option><option value="fridge">Fridge</option><option value="pantry">Pantry</option></select></label></div>
@@ -294,25 +295,30 @@ function renderPantry() {
     <button class="btn primary" id="addPantry">Add to stock</button></div>`;
   $("tab-pantry").innerHTML = html;
 
-  const catSel = $("p_cat");
-  const SAUSAGE_FLAVOURS = ["Plain","Flavoured","Pork & fennel","Beef","Chicken","Italian","Chorizo","Bratwurst","Cheese kransky","Lamb & rosemary","Honey & garlic"];
-  const CUTS = ["mince","thigh fillet","thigh cutlet","breast","drumstick","wings","whole","chuck","rump","porterhouse steak","scotch fillet","stir-fry strips","loin","belly","shoulder","leg","cutlet","fillet","bacon","sliced ham","chorizo","white fillet","prawn"];
-  const updateCut = () => {
-    const t = $("p_mtype").value;
-    const sausage = t === "Sausage";
-    $("cutLabel").firstChild.textContent = sausage ? "Flavour" : "Cut";
-    $("p_mcut").placeholder = sausage ? "plain / pork & fennel / flavoured…" : "mince / thigh / chuck…";
-    $("cutList").innerHTML = (sausage ? SAUSAGE_FLAVOURS : CUTS).map((c) => `<option value="${c}">`).join("");
-  };
+  const catSel = $("p_cat"), cutInput = $("p_mcut"), cutMenu = $("cutMenu");
   const updateBB = () => {
-    const auto = Store.autoBestBefore($("p_mtype").value, $("p_mcut").value, $("p_pdate").value, $("p_loc").value);
+    const auto = Store.autoBestBefore($("p_mtype").value, cutInput.value, $("p_pdate").value, $("p_loc").value);
     if (auto && !$("p_bbdate").value) { $("p_bbdate").value = auto;
       $("bbHint").innerHTML = `Auto best-before <b>${fmtLong(auto)}</b> (max recommended freezer time). Edit above to override.`; }
     else if (!auto) $("bbHint").textContent = "";
   };
-  const toggle = () => { const meat = catSel.value === "meat"; $("meatFields").style.display = meat ? "flex" : "none"; $("nameField").style.display = meat ? "none" : "flex"; $("p_loc").value = meat ? "freezer" : "pantry"; if (meat) updateCut(); };
+  // searchable cut dropdown, filtered by the selected meat type
+  const renderCutMenu = (filter) => {
+    const opts = Store.cutsForType($("p_mtype").value).filter((c) => c.toLowerCase().includes((filter || "").toLowerCase()));
+    cutMenu.innerHTML = opts.length
+      ? opts.map((c) => `<div data-cut="${c.replace(/"/g, "&quot;")}">${c}</div>`).join("")
+      : `<div class="none">No match — type your own</div>`;
+    cutMenu.querySelectorAll("[data-cut]").forEach((d) => d.onmousedown = (e) => { e.preventDefault(); cutInput.value = d.dataset.cut; cutMenu.classList.add("hidden"); updateBB(); });
+  };
+  cutInput.onfocus = () => { cutMenu.classList.remove("hidden"); renderCutMenu(""); };
+  cutInput.oninput = () => { cutMenu.classList.remove("hidden"); renderCutMenu(cutInput.value); };
+  cutInput.onblur = () => setTimeout(() => cutMenu.classList.add("hidden"), 150);
+  const updateCutLabel = () => { const sausage = $("p_mtype").value === "Sausage";
+    $("cutLabel").firstChild.textContent = sausage ? "Flavour" : "Cut";
+    cutInput.placeholder = sausage ? "Tap to choose or type a flavour…" : "Tap to choose or search…"; };
+  const toggle = () => { const meat = catSel.value === "meat"; $("meatFields").style.display = meat ? "flex" : "none"; $("nameField").style.display = meat ? "none" : "flex"; $("p_loc").value = meat ? "freezer" : "pantry"; if (meat) updateCutLabel(); };
   catSel.onchange = toggle; toggle();
-  $("p_mtype").onchange = () => { updateCut(); $("p_bbdate").value = ""; updateBB(); };
+  $("p_mtype").onchange = () => { cutInput.value = ""; updateCutLabel(); $("p_bbdate").value = ""; updateBB(); };
   $("p_pdate").onchange = updateBB; $("p_loc").onchange = () => { $("p_bbdate").value = ""; updateBB(); };
   $("addPantry").onclick = async () => {
     const isMeat = catSel.value === "meat";
@@ -372,10 +378,10 @@ function renderRecipes() {
     <div class="row"><label class="f">Prep min<input id="r_prep" type="number" value="10" style="width:80px"></label>
       <label class="f">Cook min<input id="r_cook" type="number" value="20" style="width:80px"></label>
       <label class="f">Serves<input id="r_serves" type="number" value="4" style="width:70px"></label></div>
-    <div class="row"><label class="f">kJ/serve<input id="r_kj" type="number" value="0" style="width:90px"></label>
-      <label class="f">Protein g<input id="r_prot" type="number" value="0" style="width:80px"></label>
-      <label class="f">Carbs g<input id="r_carb" type="number" value="0" style="width:80px"></label>
-      <label class="f">Fat g<input id="r_fat" type="number" value="0" style="width:80px"></label></div>
+    <div class="row"><label class="f">kJ/serve<input id="r_kj" type="number" placeholder="0" style="width:90px"></label>
+      <label class="f">Protein g<input id="r_prot" type="number" placeholder="0" style="width:80px"></label>
+      <label class="f">Carbs g<input id="r_carb" type="number" placeholder="0" style="width:80px"></label>
+      <label class="f">Fat g<input id="r_fat" type="number" placeholder="0" style="width:80px"></label></div>
     <div class="row"><label class="f">Leftovers<select id="r_left">
         <option value="fresh">Best fresh</option><option value="ok">OK</option><option value="excellent">Excellent</option></select></label>
       <label class="f">Weight-loss 1–5<input id="r_wl" type="number" min="1" max="5" value="3" style="width:90px"></label>
@@ -436,9 +442,12 @@ function renderSettings() {
     const unitLabel = mode === "each" ? "$/each" : "$/kg";
     const shown = c.price != null ? Math.round(c.price * factor * 100) / 100 : "";
     const ph = Math.round(c.default_ppu * factor * 100) / 100;
-    return `<div class="row" style="align-items:center;margin-bottom:6px"><span class="grow small">${cap(c.type)} · ${c.cut} <span class="muted">(${unitLabel})</span></span>
+    return `<div class="row" style="align-items:center;margin-bottom:6px"><span class="grow small">${cap(c.type)} · ${c.cut} <span class="muted">(${unitLabel})</span>${c.ame ? ' <span class="pill good" style="padding:1px 6px">AME</span>' : ''}</span>
       <input type="number" step="any" data-mp="${c.key}" data-mode="${mode}" value="${shown}" placeholder="~${ph}" style="width:110px"></div>`;
   }).join("");
+  const ameNote = Store.amePrices && Store.amePrices.updated
+    ? `AME prices auto-updated ${fmtLong(Store.amePrices.updated)} (Mon/Wed/Fri). The <span class="pill good" style="padding:1px 6px">AME</span> tag = live-scraped default; your own entry always overrides.`
+    : `Live AME auto-pricing runs Mon/Wed/Fri once the schedule is active.`;
 
   $("tab-settings").innerHTML = `<div class="card"><h2>Household</h2>
     <div class="row"><label class="f">Adults<input id="s_adults" type="number" min="0" value="${s.household_adults}" style="width:80px"></label>
@@ -465,7 +474,7 @@ function renderSettings() {
     ${dayRows}</div>
 
     <details class="card"><summary style="font-weight:600;font-size:15px;color:var(--text)">🥩 Meat pricing (optional)</summary>
-    <div class="small muted" style="margin:8px 0">Set your Australian Meat Emporium price per cut to make the meat-to-buy total accurate. Sausages are priced $/kg. Blank = use a rough estimate. Prices in AUD. (Live auto-pricing from the AME site needs the hosted version — a phone app can’t fetch another site directly.)</div>
+    <div class="small muted" style="margin:8px 0">Australian Meat Emporium prices per cut. Sausages priced $/kg. Blank = estimate. Prices in AUD. ${ameNote}</div>
     ${priceRows || '<div class="small muted">No meat cuts in the library yet.</div>'}</details>
 
     <div class="card"><h2>Backup & restore</h2>

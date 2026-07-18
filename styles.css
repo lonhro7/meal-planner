@@ -129,6 +129,14 @@ input:focus, select:focus { outline: none; border-color: var(--accent); }
 .filter-panel { background: var(--surface-2); border-radius: 10px; padding: 12px; margin-top: 10px; }
 .filter-panel .row { margin-bottom: 8px; }
 details summary { cursor: pointer; color: var(--accent); font-size: 13px; }
+.combo { position: relative; }
+.combo-menu { position: absolute; left: 0; right: 0; top: 100%; z-index: 50; margin-top: 3px;
+  background: var(--surface-2); border: 1px solid var(--accent); border-radius: 8px;
+  max-height: 240px; overflow-y: auto; box-shadow: 0 8px 24px rgba(0,0,0,.5); }
+.combo-menu div { padding: 10px 12px; cursor: pointer; font-size: 15px; border-bottom: 1px solid var(--line); }
+.combo-menu div:last-child { border-bottom: none; }
+.combo-menu div:hover, .combo-menu div.active { background: var(--surface); color: var(--accent); }
+.combo-menu .none { color: var(--muted); font-style: italic; cursor: default; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { background: var(--surface-2); color: var(--muted); border: 1px solid var(--line);
   border-radius: 20px; padding: 6px 12px; font-size: 13px; cursor: pointer; }

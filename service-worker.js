@@ -9,6 +9,7 @@ const FILES = [
   "./seed.js", "./store.js", "./app.js",
   "./manifest.webmanifest", "./icon.svg",
   "./icon-180.png", "./icon-192.png", "./icon-512.png",
+  "./data/ame-prices.json",
 ];
 
 self.addEventListener("install", (e) => {
