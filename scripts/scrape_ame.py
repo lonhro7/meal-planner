@@ -39,6 +39,11 @@ def detect_type(t):
     if any(w in t for w in ("beef","angus","wagyu","porterhouse","scotch","rump","brisket","topside","silverside","sirloin","t-bone","tomahawk","chuck","eye fillet","skirt","flank","osso","gravy beef","oyster blade","minute steak","denver","bavette")): return "beef"
     return ""
 
+def bone_suffix(t):
+    if "boneless" in t or "bone out" in t or "deboned" in t: return " (boneless)"
+    if "bone in" in t or "bone-in" in t: return " (bone in)"
+    return ""
+
 def detect_cut(t, typ):
     whole = "whole" in t
     def W(base): return base + " whole" if whole else base
@@ -76,7 +81,7 @@ def detect_cut(t, typ):
         return ""
     if typ == "lamb":
         if "mince" in t: return "mince"
-        if "shoulder" in t: return "shoulder"
+        if "shoulder" in t: return "shoulder" + bone_suffix(t)
         if "shank" in t: return "shank"
         if "cutlet" in t: return "cutlet"
         if "backstrap" in t: return "backstrap"
@@ -84,18 +89,18 @@ def detect_cut(t, typ):
         if "loin chop" in t or ("chop" in t and "loin" in t): return "loin chop"
         if "chop" in t: return "loin chop"
         if "rack" in t: return "rack"
-        if "leg" in t: return "leg steak" if "steak" in t else W("leg")
+        if "leg" in t: return "leg steak" if "steak" in t else "leg" + bone_suffix(t)
         return ""
     if typ == "pork":
         if "mince" in t: return "mince"
         if "belly" in t: return "belly"
-        if "shoulder" in t: return "shoulder"
+        if "shoulder" in t: return "shoulder" + bone_suffix(t)
         if "scotch" in t: return "scotch fillet"
         if "schnitzel" in t: return "schnitzel steak"
         if "cutlet" in t: return "cutlet"
         if "rib" in t: return "ribs"
         if "loin" in t: return "loin steak" if "steak" in t else ("loin chop" if "chop" in t else "loin")
-        if "leg" in t: return "leg"
+        if "leg" in t: return "leg" + bone_suffix(t)
         return ""
     if typ == "sausage":
         if "fennel" in t: return "pork & fennel"

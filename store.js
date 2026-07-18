@@ -24,8 +24,8 @@ const AVG_SAUSAGE_KG = 0.1;  // assumed weight per sausage, for $/kg pricing of 
 const CURATED_CUTS = {
   beef: ["mince","chuck","rump","rump whole","rump steak","porterhouse steak","scotch fillet","eye fillet","eye fillet whole","blade","oyster blade","brisket","topside","silverside","corned silverside","gravy beef","osso bucco","stir-fry strips","minute steak","skirt","flank","short ribs","ribs"],
   chicken: ["mince","breast","thigh fillet","thigh cutlet","drumstick","wings","whole","tenderloins","maryland"],
-  lamb: ["mince","leg","leg whole","leg steak","shoulder","shank","cutlet","loin chop","forequarter chop","backstrap","rack"],
-  pork: ["mince","loin","loin chop","loin steak","belly","shoulder","scotch fillet","leg","ribs","cutlet","schnitzel steak"],
+  lamb: ["mince","leg","leg (bone in)","leg (boneless)","leg steak","shoulder","shoulder (bone in)","shoulder (boneless)","shank","cutlet","loin chop","forequarter chop","backstrap","rack"],
+  pork: ["mince","loin","loin chop","loin steak","belly","shoulder","shoulder (bone in)","shoulder (boneless)","scotch fillet","leg","leg (bone in)","leg (boneless)","ribs","cutlet","schnitzel steak"],
   sausage: ["plain","flavoured","pork sausage","beef sausage","pork & fennel","italian","chorizo","chicken","bratwurst","lamb & rosemary","honey & garlic","sausage mince"],
   smallgoods: ["bacon","sliced ham","ham hock","chorizo","prosciutto","salami","kransky","pancetta"],
   fish: ["white fillet","barramundi fillet","cod fillet","snapper fillet","whole snapper","prawn","smoked fillet","marinara mix"],
