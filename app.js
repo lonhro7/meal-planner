@@ -437,13 +437,17 @@ function renderSettings() {
   const cap = (x) => x.charAt(0).toUpperCase() + x.slice(1);
   const priceRows = Store.getMeatCuts().map((c) => {
     const isSausage = c.type.toLowerCase() === "sausage";
-    const mode = c.unit === "g" ? "gkg" : (isSausage ? "sausage" : "each");   // g→$/kg, sausage whole→$/kg, else $/each
-    const factor = mode === "gkg" ? 1000 : (mode === "sausage" ? (1 / SAUSAGE_KG) : 1);
+    const pieceW = Store.pieceKg(c.type, c.cut);
+    let mode, factor;   // convert stored $/unit <-> displayed value
+    if (c.unit === "g") { mode = "gkg"; factor = 1000; }                 // g  -> $/kg
+    else if (isSausage) { mode = "sausage"; factor = 1 / SAUSAGE_KG; }   // sausage -> $/kg
+    else if (pieceW > 0) { mode = "piece"; factor = 1 / pieceW; }        // per-piece cut priced $/kg
+    else { mode = "each"; factor = 1; }                                  // else $/each
     const unitLabel = mode === "each" ? "$/each" : "$/kg";
     const shown = c.price != null ? Math.round(c.price * factor * 100) / 100 : "";
     const ph = Math.round(c.default_ppu * factor * 100) / 100;
     return `<div class="row" style="align-items:center;margin-bottom:6px"><span class="grow small">${cap(c.type)} · ${c.cut} <span class="muted">(${unitLabel})</span>${c.ame ? ' <span class="pill good" style="padding:1px 6px">AME</span>' : ''}</span>
-      <input type="number" step="any" data-mp="${c.key}" data-mode="${mode}" value="${shown}" placeholder="~${ph}" style="width:110px"></div>`;
+      <input type="number" step="any" data-mp="${c.key}" data-mode="${mode}" data-weight="${pieceW}" value="${shown}" placeholder="~${ph}" style="width:110px"></div>`;
   }).join("");
   const ameNote = Store.amePrices && Store.amePrices.updated
     ? `AME prices auto-updated ${fmtLong(Store.amePrices.updated)} (Mon/Wed/Fri). The <span class="pill good" style="padding:1px 6px">AME</span> tag = live-scraped default; your own entry always overrides.`
@@ -513,8 +517,9 @@ function renderSettings() {
     const mode = inp.dataset.mode; const v = inp.value.trim();
     if (v === "") { await Store.setMeatPrice(inp.dataset.mp, ""); toast("Price cleared"); return; }
     let ppu = Number(v);
-    if (mode === "gkg") ppu = ppu / 1000;          // $/kg -> $/g
-    else if (mode === "sausage") ppu = ppu * SAUSAGE_KG; // $/kg -> $/sausage
+    if (mode === "gkg") ppu = ppu / 1000;                                   // $/kg -> $/g
+    else if (mode === "sausage") ppu = ppu * SAUSAGE_KG;                    // $/kg -> $/sausage
+    else if (mode === "piece") ppu = ppu * (Number(inp.dataset.weight) || 0.15); // $/kg -> $/piece
     await Store.setMeatPrice(inp.dataset.mp, ppu);
     toast("Price saved");
   });

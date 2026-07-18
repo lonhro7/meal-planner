@@ -13,7 +13,14 @@ OUT = os.path.join(os.path.dirname(__file__), "..", "data", "ame-prices.json")
 UA = {"User-Agent": "Mozilla/5.0 (meal-planner price updater)"}
 
 SKIP = ("pet", "dog ", " cat", "gift", "voucher", "bundle", "box", "hamper",
-        "subscription", "sample", "truffle", "each", "marinated")
+        "subscription", "sample", "truffle", "each", "marinated", "pack of")
+
+# plausible $/kg range per meat type — anything outside is treated as a bad parse
+# (e.g. a per-each pack price, a per-100g price, or a mislabelled premium product)
+BANDS = {
+    "beef": (10, 130), "chicken": (5, 26), "lamb": (12, 60), "pork": (8, 36),
+    "sausage": (8, 30), "smallgoods": (12, 60), "fish": (14, 60), "salmon": (24, 75),
+}
 
 def fetch_all():
     products = []
@@ -146,10 +153,11 @@ def main():
             price = float(variants[0].get("price"))
         except (TypeError, ValueError):
             continue
-        if price <= 3 or price > 300:   # implausible as $/kg for our purposes
-            continue
         typ = detect_type(title)
         if not typ:
+            continue
+        lo, hi = BANDS.get(typ, (5, 200))
+        if price < lo or price > hi:          # outside a sane $/kg band -> bad parse, skip
             continue
         cut = detect_cut(title, typ)
         if not cut:

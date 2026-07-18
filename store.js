@@ -20,6 +20,13 @@ const LEFTOVER_LABELS = { fresh: "Best fresh", ok: "OK leftovers", excellent: "E
 // something you can prep early and slow-cook / finish in 10-15 min when home.
 const DAY_PREF_OPTIONS = [["quick","Quick & easy"],["long","Long cook OK"],["slowcook","Early prep / slow cook"],["leftover","Leftover night"],["light","Light (lower kJ)"],["nocook","No cook"]];
 const AVG_SAUSAGE_KG = 0.1;  // assumed weight per sausage, for $/kg pricing of sausages
+// approx weight per piece (kg) for cuts counted "whole" in recipes, so they can be priced $/kg
+const PIECE_KG = {
+  "chicken|thigh cutlet": 0.15, "chicken|drumstick": 0.1, "chicken|maryland": 0.35,
+  "lamb|cutlet": 0.05, "lamb|loin chop": 0.12, "lamb|shank": 0.35, "lamb|forequarter chop": 0.15,
+  "pork|loin chop": 0.15, "pork|cutlet": 0.2,
+  "salmon|fillet": 0.16, "fish|white fillet": 0.15,
+};
 // curated cut lists per meat type (merged with recipe cuts + AME cuts at runtime)
 const CURATED_CUTS = {
   beef: ["mince","chuck","rump","rump whole","rump steak","porterhouse steak","scotch fillet","eye fillet","eye fillet whole","blade","oyster blade","brisket","topside","silverside","corned silverside","gravy beef","osso bucco","stir-fry strips","minute steak","skirt","flank","short ribs","ribs"],
@@ -113,12 +120,15 @@ const Store = {
     catch (_) { /* offline or missing — fall back to estimates */ }
   },
   ameKg(type, cut) { const m = this.amePrices && this.amePrices.kg_prices; return m ? m[norm(type) + "|" + norm(cut)] : undefined; },
+  pieceKg(type, cut) { return PIECE_KG[norm(type) + "|" + norm(cut)] || 0; },
   // default price-per-unit for a cut: AME $/kg (if known) converted to the cut's unit, else fallback
   defaultPPU(type, cut, unit, fallback) {
     const kg = this.ameKg(type, cut);
     if (kg == null) return fallback;
     if (unit === "g") return kg / 1000;
     if (norm(type) === "sausage") return kg * AVG_SAUSAGE_KG;
+    const w = this.pieceKg(type, cut);
+    if (unit === "whole" && w) return kg * w;   // priced $/kg, costed per piece via avg weight
     return fallback;
   },
   meatPriceResolved(type, cut, unit, fallback) {
@@ -442,6 +452,9 @@ const Store = {
   async generate(dates, filt) {
     const s = this.state.settings, servings = s.servings_per_meal, availMeats = this.availableMeatTypes();
     this.getPlan();
+    // never touch days before today — past meals stay as they are
+    const today = todayISO();
+    dates = (dates || []).filter((d) => d >= today);
     const byDate = {}; this.state.meals.forEach((m) => (byDate[m.date] = m));
     // release any previous "no cook" preference days so they can be re-evaluated
     dates.forEach((d) => { const m = byDate[d]; if (m && m.status === "away" && m.note === "nocook-pref") { m.status = "empty"; m.note = ""; } });
