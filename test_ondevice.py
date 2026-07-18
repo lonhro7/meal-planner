@@ -298,6 +298,29 @@ try:
         pg.eval_on_selector("#rvClose", "el=>el.click()")
         ev("(()=>{ window.fetch = window.__real; })()")   # restore real fetch for remaining tests
 
+        print("16. Meat frequency caps + cut preferences (strict)")
+        # beef capped at 0% -> never appears
+        ev("(async()=>{ await Store.saveSettings({meat_max_pct:{beef:0}, meat_allowed_cuts:{}}); await Store.regenerate({scope:'all',filter:{}}); })()")
+        beef0 = ev("Store.getPlan().weeks.flatMap(w=>w.meals).filter(m=>m.status==='planned'&&m.recipe).filter(m=>Store.primaryProtein(Store.recipeById(m.recipe.id))==='beef').length")
+        check(beef0 == 0, f"beef 0% cap -> zero beef dinners ({beef0})")
+        # beef capped at 20% -> at most floor(20% of cook nights)
+        ev("(async()=>{ await Store.saveSettings({meat_max_pct:{beef:20}}); await Store.regenerate({scope:'all',filter:{}}); })()")
+        plan_nights = ev("Store.state.meals.filter(m=>m.status!=='away').length")
+        beef20 = ev("Store.getPlan().weeks.flatMap(w=>w.meals).filter(m=>m.status==='planned'&&m.recipe).filter(m=>Store.primaryProtein(Store.recipeById(m.recipe.id))==='beef').length")
+        cap = int(0.20 * plan_nights)
+        check(beef20 <= cap, f"beef 20% cap respected ({beef20} <= {cap})")
+        # cut preference: pork restricted to 'belly'
+        ev("(async()=>{ await Store.saveSettings({meat_max_pct:{}, meat_allowed_cuts:{pork:['belly']}}); await Store.regenerate({scope:'all',filter:{}}); })()")
+        bad_pork = ev("""Store.getPlan().weeks.flatMap(w=>w.meals).filter(m=>m.status==='planned'&&m.recipe)
+          .filter(m=>{const r=Store.recipeById(m.recipe.id); return (r.ingredients||[]).some(i=>i.is_meat&&i.meat_type==='pork'&&!/belly/i.test(i.meat_cut||''));}).length""")
+        check(bad_pork == 0, f"pork restricted to belly -> no other pork cuts planned ({bad_pork})")
+        excl = ev("""(()=>{const r=Store.state.recipes.find(x=>(x.ingredients||[]).some(i=>i.is_meat&&i.meat_type==='pork'&&!/belly/i.test(i.meat_cut||''))); return r?Store.passesCutPrefs(r):'no-recipe';})()""")
+        check(excl is False, f"a non-belly pork recipe is excluded by the cut rule ({excl})")
+        # chicken left unrestricted still allowed
+        chk_ok = ev("""(()=>{const r=Store.state.recipes.find(x=>(x.ingredients||[]).some(i=>i.is_meat&&i.meat_type==='chicken')); return r?Store.passesCutPrefs(r):'no-recipe';})()""")
+        check(chk_ok is True, "unrestricted chicken recipe still allowed")
+        ev("(async()=>await Store.saveSettings({meat_max_pct:{}, meat_allowed_cuts:{}}))()")
+
         print("15. Export / reset / restore round-trip")
         base = ev("Store.listRecipes().length")
         exp = ev("JSON.stringify(Store.exportData())")

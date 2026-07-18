@@ -174,6 +174,8 @@ const Store = {
     if (s.high_protein_g == null) s.high_protein_g = 30;
     if (s.low_carb_g == null) s.low_carb_g = 30;
     if (!s.meat_prices) s.meat_prices = {};
+    if (!s.meat_max_pct) s.meat_max_pct = {};        // e.g. { beef: 40 } = beef on at most 40% of dinners
+    if (!s.meat_allowed_cuts) s.meat_allowed_cuts = {}; // e.g. { pork: ["belly","leg (bone in)"] } = only those cuts
     (this.state.pantry || []).forEach((p) => {
       if (p.location == null) p.location = p.is_meat ? "freezer" : "pantry";
       if (p.special_occasion == null) p.special_occasion = false;
@@ -194,6 +196,7 @@ const Store = {
         household_adults: 2, household_children: 2, servings_per_meal: 4,
         weekly_budget: 0, leftover_mode: "auto", week_start_day: 0,
         high_protein_g: 30, low_carb_g: 30, meat_prices: {},
+        meat_max_pct: {}, meat_allowed_cuts: {},
         day_prefs: { 0:[],1:[],2:[],3:[],4:[],5:[],6:[] },
       },
       seq: { recipe: recipes.length + 1, pantry: 1, meal: 1 },
@@ -505,8 +508,19 @@ const Store = {
     (prefs || []).forEach((p) => { eff = this.mergeFilters(eff, this.presetFilter(p)); });
     return eff;
   },
+  // Does the recipe only use meat cuts the user allows? A meat type with a
+  // non-empty allowed-cuts list is restricted to those cuts; others are unrestricted.
+  passesCutPrefs(r) {
+    const cuts = this.state.settings.meat_allowed_cuts || {};
+    for (const ing of r.ingredients || []) {
+      if (!ing.is_meat || !ing.meat_type) continue;
+      const allowed = cuts[norm(ing.meat_type)];
+      if (allowed && allowed.length && !allowed.some((c) => cutMatch(c, ing.meat_cut))) return false;
+    }
+    return true;
+  },
   candidates(f, servings) {
-    const ok = this.state.recipes.filter((r) => this.matchesFilter(r, f, servings));
+    const ok = this.state.recipes.filter((r) => this.matchesFilter(r, f, servings) && this.passesCutPrefs(r));
     const liked = ok.filter((r) => (r.liked || 0) >= 0);
     return liked.length ? liked : ok;
   },
@@ -537,6 +551,32 @@ const Store = {
     const targetDates = new Set();
     dates.forEach((d) => { const m = byDate[d]; if (m && !m.locked && m.status !== "away") targetDates.add(d); });
     this.state.meals.forEach((m) => { if (targetDates.has(m.date)) { m.recipe_id = null; m.source_meal_id = null; m.status = "empty"; } });
+
+    // --- meat frequency caps (percentage of cooking dinners across the plan) ---
+    // Turn each "beef <= 40%" into a hard max count over all cook-able nights, and
+    // pre-count meats already fixed on non-target (locked/past) nights.
+    const planNights = this.state.meals.filter((m) => {
+      if (m.status === "away") return false;
+      const pr = (s.day_prefs && s.day_prefs[weekdayOf(m.date)]) || [];
+      if (targetDates.has(m.date) && pr.includes("nocook")) return false;
+      return true;
+    }).length;
+    const maxCount = {};
+    for (const [t, p] of Object.entries(s.meat_max_pct || {})) {
+      if (p != null && p < 100) maxCount[norm(t)] = Math.floor((p / 100) * planNights);
+    }
+    const meatCount = {};
+    for (const m of this.state.meals) {
+      if (targetDates.has(m.date) || m.status !== "planned" || !m.recipe_id) continue;
+      const rr = this.recipeById(m.recipe_id); const mt = rr ? this.primaryProtein(rr) : "";
+      if (mt) meatCount[mt] = (meatCount[mt] || 0) + 1;
+    }
+    // strip candidates whose protein has hit its cap (strict — no relaxing to fill)
+    const freqOk = (list) => list.filter((r) => {
+      const mt = this.primaryProtein(r);
+      if (!mt || !(mt in maxCount)) return true;
+      return (meatCount[mt] || 0) < maxCount[mt];
+    });
 
     const ordered = [...this.state.meals].sort((a, b) => a.date.localeCompare(b.date));
     let recent = [], lastProtein = "", filled = 0;
@@ -584,10 +624,11 @@ const Store = {
         if (src) { placeLeftover(m, src); filled++; continue; }
       }
       const eff = this.applyDayPrefs(filt || {}, prefs);
-      let choice = this.pick(this.candidates(eff, servings), recent.slice(-4), lastProtein, availMeats);
-      if (!choice) choice = this.pick(this.candidates(filt || {}, servings), recent.slice(-4), lastProtein, availMeats);
-      if (!choice) continue;
+      let choice = this.pick(freqOk(this.candidates(eff, servings)), recent.slice(-4), lastProtein, availMeats);
+      if (!choice) choice = this.pick(freqOk(this.candidates(filt || {}, servings)), recent.slice(-4), lastProtein, availMeats);
+      if (!choice) continue;   // strict: nothing fits the caps/cut rules — leave the night empty
       m.recipe_id = choice.id; m.status = "planned"; recent.push(choice.id); lastProtein = this.primaryProtein(choice);
+      const cmt = this.primaryProtein(choice); if (cmt) meatCount[cmt] = (meatCount[cmt] || 0) + 1;
       cooks.push({ meal: m, rating: leftoverScore(choice), date: m.date }); filled++;
       if (s.leftover_mode === "auto" && leftoverScore(choice) >= 3) pendingAuto = { mealId: m.id, date: m.date };
     }

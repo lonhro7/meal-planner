@@ -461,6 +461,25 @@ function renderSettings() {
     return `<div class="row" style="align-items:center;margin-bottom:6px"><span class="grow small">${cap(c.type)} · ${c.cut} <span class="muted">(${unitLabel})</span>${c.ame ? ' <span class="pill good" style="padding:1px 6px">AME</span>' : ''}</span>
       <input type="number" step="any" data-mp="${c.key}" data-mode="${mode}" data-weight="${pieceW}" value="${shown}" placeholder="~${ph}" style="width:110px"></div>`;
   }).join("");
+  // per-meat frequency caps (% of dinners) + allowed-cuts restriction
+  const meatPrefRows = Store.MEAT_TYPES.filter((t) => t !== "Other").map((type) => {
+    const key = type.toLowerCase();
+    const pct = s.meat_max_pct ? s.meat_max_pct[key] : null;
+    const val = (pct == null) ? 100 : pct;
+    const allowed = (s.meat_allowed_cuts && s.meat_allowed_cuts[key]) || [];
+    const cuts = Store.cutsForType(type);
+    const anyOn = allowed.length === 0;
+    const cutChips = cuts.length ? `<div class="fl"><span class="fl-label">Cuts</span><div class="chips">
+        <button type="button" class="chip ${anyOn ? "on" : ""}" data-cutany="${key}">Any cut</button>
+        ${cuts.map((c) => `<button type="button" class="chip ${allowed.some((a) => a.toLowerCase() === c.toLowerCase()) ? "on" : ""}" data-cut="${key}" data-cutval="${c}">${c}</button>`).join("")}
+      </div></div>` : "";
+    const lbl = val >= 100 ? "No limit" : `≤ ${val}% of dinners`;
+    return `<div class="meat-pref">
+      <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:2px"><b>${type}</b>
+        <span class="small muted" data-freqlbl="${key}">${lbl}</span></div>
+      <input type="range" min="0" max="100" step="10" data-freq="${key}" value="${val}" style="width:100%">
+      ${cutChips}</div>`;
+  }).join("");
   const ameNote = Store.amePrices && Store.amePrices.updated
     ? `AME prices auto-updated ${fmtLong(Store.amePrices.updated)} (Mon/Wed/Fri). The <span class="pill good" style="padding:1px 6px">AME</span> tag = live-scraped default; your own entry always overrides.`
     : `Live AME auto-pricing runs Mon/Wed/Fri once the schedule is active.`;
@@ -484,6 +503,10 @@ function renderSettings() {
     <div class="row"><label class="f">“High protein” means ≥ (g/serve)<input id="s_hp" type="number" min="0" value="${s.high_protein_g}" style="width:110px"></label>
       <label class="f">“Low carb” means ≤ (g/serve)<input id="s_lc" type="number" min="0" value="${s.low_carb_g}" style="width:110px"></label></div>
     <div class="small muted" style="margin-top:8px">These set what the High-protein and Low-carb filters mean.</div></div>
+
+    <div class="card"><h2>Meat preferences</h2>
+    <div class="small muted" style="margin-bottom:10px">Cap how often each meat appears (as a share of your dinners), and restrict it to specific cuts if you like — leave a meat on “Any cut” for no restriction. These apply when you regenerate. Strict: if nothing fits, a night is left empty rather than breaking a rule.</div>
+    ${meatPrefRows}</div>
 
     <div class="card"><h2>Day preferences</h2>
     <div class="small muted" style="margin-bottom:8px">Tick any that apply to each night (you can pick more than one). “Light” = lower-kilojoule meals. “Early prep / slow cook” = set-and-forget or a 10–15 min finish when you get home. “No cook” leaves that night free.</div>
@@ -513,6 +536,23 @@ function renderSettings() {
     const wd = b.dataset.dpref, v = b.dataset.dval; const dp = Store.getSettings().day_prefs; const arr = dp[wd] || [];
     const i = arr.indexOf(v); if (i >= 0) arr.splice(i, 1); else arr.push(v); dp[wd] = arr;
     b.classList.toggle("on"); await Store.saveSettings({ day_prefs: dp });
+  });
+  document.querySelectorAll("[data-freq]").forEach((sl) => {
+    const key = sl.dataset.freq, lbl = document.querySelector(`[data-freqlbl="${key}"]`);
+    sl.oninput = () => { const v = +sl.value; if (lbl) lbl.textContent = v >= 100 ? "No limit" : `≤ ${v}% of dinners`; };
+    sl.onchange = async () => { const v = +sl.value; const mp = Store.getSettings().meat_max_pct || {};
+      if (v >= 100) delete mp[key]; else mp[key] = v; await Store.saveSettings({ meat_max_pct: mp }); toast("Saved"); };
+  });
+  document.querySelectorAll("[data-cutany]").forEach((b) => b.onclick = async () => {
+    const key = b.dataset.cutany; const mac = Store.getSettings().meat_allowed_cuts || {};
+    delete mac[key]; await Store.saveSettings({ meat_allowed_cuts: mac }); renderSettings(); toast("Any cut allowed");
+  });
+  document.querySelectorAll("[data-cut]").forEach((b) => b.onclick = async () => {
+    const key = b.dataset.cut, val = b.dataset.cutval; const mac = Store.getSettings().meat_allowed_cuts || {};
+    const arr = mac[key] || []; const i = arr.findIndex((a) => a.toLowerCase() === val.toLowerCase());
+    if (i >= 0) arr.splice(i, 1); else arr.push(val);
+    if (arr.length) mac[key] = arr; else delete mac[key];
+    await Store.saveSettings({ meat_allowed_cuts: mac }); renderSettings();
   });
   $("exportBtn").onclick = () => {
     const data = JSON.stringify(Store.exportData(), null, 2);
