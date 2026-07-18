@@ -134,13 +134,19 @@ function dayRow(m, today) {
   if (m.status === "away") cls.push("away");
   if (m.status === "leftover") cls.push("leftover");
   const draggable = !m.locked && (m.status === "planned" || m.status === "empty");
-  let title, meta = "", tags = "";
+  let title, meta = "", tags = "", viewId = null;
+  const r = m.recipe;
   if (m.status === "away") { title = m.note === "nocook-pref" ? "🚫 No cook night" : "✈ Away / no cook needed"; if (m.note === "nocook-pref") meta = "Day preference: no cooking"; }
-  else if (m.status === "leftover") { title = "♻ Leftovers" + (m.recipe ? " — " + m.recipe.title : ""); meta = "No cooking or shopping needed"; }
-  else if (m.recipe) { title = m.recipe.title;
-    meta = `${m.recipe.total_min} min · ${m.recipe.kj} kJ/serve` + (m.recipe.leftover !== "fresh" ? " · " + (m.recipe.leftover === "excellent" ? "excellent leftovers" : "ok leftovers") : "");
-    tags = (m.recipe.tags || []).slice(0, 3).map((t) => `<span class="tag">${t}</span>`).join(""); }
+  else if (m.status === "leftover") { title = "♻ Leftovers" + (r ? " — " + r.title : ""); viewId = r ? r.id : null;
+    meta = "No cooking or shopping needed" + (r ? ` · ${r.kj} kJ/serve · ${r.protein_g} g protein/serve` : ""); }
+  else if (r) { title = r.title; viewId = r.id;
+    meta = `${r.total_min} min (prep ${r.prep_min} + cook ${r.cook_min}) · ${r.kj} kJ/serve · ${r.protein_g} g protein/serve`
+      + (r.leftover !== "fresh" ? " · " + (r.leftover === "excellent" ? "excellent leftovers" : "ok leftovers") : "");
+    tags = (r.tags || []).slice(0, 3).map((t) => `<span class="tag">${t}</span>`).join(""); }
   else { title = "— empty —"; meta = "Regenerate or drag a meal here"; }
+  const titleHtml = viewId != null
+    ? `<div class="title tappable" data-view="${viewId}" data-serves="${m.servings}" role="button" tabindex="0">${title}<span class="view-hint"> ›</span></div>`
+    : `<div class="title">${title}</div>`;
 
   let a = `<div class="actions">`;
   if (m.recipe && m.status === "planned") {
@@ -155,11 +161,16 @@ function dayRow(m, today) {
   const grip = draggable ? `<div class="grip" title="Drag to reorder">⠿</div>` : `<div class="grip placeholder"></div>`;
   return `<div class="${cls.join(" ")}" ${draggable ? 'data-drag="1"' : ""} data-recipeid="${m.recipe ? m.recipe.id : ""}" data-date="${m.date}">
     ${grip}<div class="dow"><div class="d">${f.d}</div><div class="m">${f.dow}</div></div>
-    <div class="body"><div class="title">${title}</div><div class="meta">${meta}</div><div class="tags">${tags}</div>${a}</div></div>`;
+    <div class="body">${titleHtml}<div class="meta">${meta}</div><div class="tags">${tags}</div>${a}</div></div>`;
 }
 
 function wireDayActions() {
   document.querySelectorAll("[data-cook]").forEach((b) => b.onclick = () => openCook(Number(b.dataset.cook), Number(b.dataset.serves)));
+  document.querySelectorAll("#tab-plan [data-view]").forEach((b) => {
+    const open = () => openRecipeView(Number(b.dataset.view), Number(b.dataset.serves) || undefined);
+    b.onclick = open;
+    b.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } };
+  });
   document.querySelectorAll("[data-lock]").forEach((b) => b.onclick = async () => { await Store.setLock(Number(b.dataset.lock), b.dataset.locked !== "true"); toast(b.dataset.locked !== "true" ? "Locked" : "Unlocked"); renderPlan(); });
   document.querySelectorAll("[data-away]").forEach((b) => b.onclick = async () => { const away = b.dataset.isaway === "true"; await Store.setDayStatus(b.dataset.away, away ? "open" : "away"); toast(away ? "Marked as cooking" : "Marked away"); renderPlan(); });
   document.querySelectorAll("[data-regenday]").forEach((b) => b.onclick = () => regenerate({ scope: "day", start: b.dataset.regenday }));
@@ -524,6 +535,33 @@ function renderSettings() {
     toast("Price saved");
   });
 }
+
+// ------------------------------------------------------------- RECIPE VIEW
+// Read-only full recipe: ingredients (scaled to servings) + numbered method.
+function openRecipeView(recipeId, servings) {
+  const r = Store.getRecipe(recipeId); if (!r) return;
+  const serves = servings || r.servings;
+  state.viewing = { id: recipeId, servings: serves };
+  const scale = serves / Math.max(r.servings, 1);
+  $("rvTitle").textContent = r.title;
+  const macros = `${r.kj} kJ · ${r.protein_g} g protein · ${r.carbs_g} g carbs · ${r.fat_g} g fat`;
+  const ings = (r.ingredients || []).slice().sort((a, b) => (a.step_index || 0) - (b.step_index || 0));
+  const ingHtml = ings.length
+    ? ings.map((x) => `<li>${qtyLabel(x.quantity * scale, x.unit)} ${x.name}${x.optional ? " (optional)" : ""}</li>`).join("")
+    : `<li class="muted">No ingredients recorded.</li>`;
+  const steps = r.method_steps && r.method_steps.length ? r.method_steps : ["No method steps recorded."];
+  const stepHtml = steps.map((s, i) => `<li><span class="rv-stepn">${i + 1}</span><span>${s}</span></li>`).join("");
+  $("rvBody").innerHTML =
+    `<div class="rv-summary">${r.total_min} min (prep ${r.prep_min} + cook ${r.cook_min}) · serves ${serves}</div>
+     <div class="rv-summary">${macros} · per serve</div>
+     ${r.leftover_label ? `<div class="rv-summary">Leftovers: ${r.leftover_label}</div>` : ""}
+     <h4 class="rv-h">Ingredients</h4><ul class="rv-ings">${ingHtml}</ul>
+     <h4 class="rv-h">Method</h4><ol class="rv-steps">${stepHtml}</ol>`;
+  $("recipeView").classList.add("open");
+}
+function closeRecipeView() { $("recipeView").classList.remove("open"); }
+$("rvClose").onclick = closeRecipeView;
+$("rvCook").onclick = () => { const v = state.viewing; closeRecipeView(); if (v) openCook(v.id, v.servings); };
 
 // ---------------------------------------------------------------- COOK MODE
 let wakeLock = null;

@@ -495,7 +495,10 @@ const Store = {
       // "no cook" night — leave it as a no-cook slot (excluded from shopping)
       if (prefs.includes("nocook")) { m.status = "away"; m.recipe_id = null; m.source_meal_id = null; m.note = "nocook-pref"; lastProtein = ""; continue; }
 
-      if (pendingAuto && daysBetween(pendingAuto.date, m.date) >= 1 && daysBetween(pendingAuto.date, m.date) <= 3) {
+      // Sunday is never auto-filled as a leftover night unless the user has
+      // explicitly set the Sunday day preference to "Leftover night".
+      const sundayBlocksAuto = weekdayOf(m.date) === 0 && !prefs.includes("leftover");
+      if (pendingAuto && !sundayBlocksAuto && daysBetween(pendingAuto.date, m.date) >= 1 && daysBetween(pendingAuto.date, m.date) <= 3) {
         const src = this.mealById(pendingAuto.mealId);
         if (src && src.recipe_id) { placeLeftover(m, src); pendingAuto = null; filled++; continue; }
         pendingAuto = null;
