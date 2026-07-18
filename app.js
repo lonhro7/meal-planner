@@ -138,7 +138,7 @@ function dayRow(m, today) {
   const r = m.recipe;
   if (m.status === "away") { title = m.note === "nocook-pref" ? "🚫 No cook night" : "✈ Away / no cook needed"; if (m.note === "nocook-pref") meta = "Day preference: no cooking"; }
   else if (m.status === "leftover") { title = "♻ Leftovers" + (r ? " — " + r.title : ""); viewId = r ? r.id : null;
-    meta = "No cooking or shopping needed" + (r ? ` · ${r.kj} kJ/serve · ${r.protein_g} g protein/serve` : ""); }
+    meta = r ? `${r.kj} kJ/serve · ${r.protein_g} g protein/serve` : ""; }
   else if (r) { title = r.title; viewId = r.id;
     meta = `${r.total_min} min (prep ${r.prep_min} + cook ${r.cook_min}) · ${r.kj} kJ/serve · ${r.protein_g} g protein/serve`
       + (m.extra_for_leftovers > 0 ? ` · cook ${m.servings} serves (double for leftovers)` : "")
