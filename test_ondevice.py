@@ -29,6 +29,9 @@ try:
         mt = ev("[...new Set(Store.state.recipes.flatMap(r=>r.ingredients).filter(i=>i.is_meat).map(i=>i.meat_type))]")
         check(not any(x in mt for x in ["veal","kangaroo","duck"]), "no veal/kangaroo/duck in recipes")
         check(all(x not in ev("Store.MEAT_TYPES") for x in ["Veal","Kangaroo","Duck"]), "dropdown has no Veal/Kangaroo/Duck")
+        avg_steps = ev("Store.state.recipes.reduce((s,r)=>s+r.method_steps.length,0)/Store.state.recipes.length")
+        check(avg_steps >= 6, f"methods are detailed (avg {round(avg_steps,1)} steps/recipe)")
+        check(ev("Store.state.recipes.every(r=>r.ingredients.every(i=>i.step_index<r.method_steps.length))"), "every ingredient maps to a valid step")
 
         print("2. Regenerate + kJ + leftovers")
         ev("(async()=>await Store.regenerate({scope:'all',filter:{}}))()")
