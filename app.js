@@ -552,16 +552,52 @@ function openRecipeView(recipeId, servings) {
   const steps = r.method_steps && r.method_steps.length ? r.method_steps : ["No method steps recorded."];
   const stepHtml = steps.map((s, i) => `<li><span class="rv-stepn">${i + 1}</span><span>${s}</span></li>`).join("");
   $("rvBody").innerHTML =
-    `<div class="rv-summary">${r.total_min} min (prep ${r.prep_min} + cook ${r.cook_min}) · serves ${serves}</div>
+    `<div class="rv-photo" id="rvPhoto"></div>
+     <div class="rv-summary">${r.total_min} min (prep ${r.prep_min} + cook ${r.cook_min}) · serves ${serves}</div>
      <div class="rv-summary">${macros} · per serve</div>
      ${r.leftover_label ? `<div class="rv-summary">Leftovers: ${r.leftover_label}</div>` : ""}
      <h4 class="rv-h">Ingredients</h4><ul class="rv-ings">${ingHtml}</ul>
      <h4 class="rv-h">Method</h4><ol class="rv-steps">${stepHtml}</ol>`;
   $("recipeView").classList.add("open");
+  $("rvBody").scrollTop = 0;
+  loadRecipePhoto(recipeId);
 }
 function closeRecipeView() { $("recipeView").classList.remove("open"); }
 $("rvClose").onclick = closeRecipeView;
 $("rvCook").onclick = () => { const v = state.viewing; closeRecipeView(); if (v) openCook(v.id, v.servings); };
+
+// Auto-fetched dish photo (TheMealDB). Best-effort: shows a spinner while it looks,
+// then the picture, a small "try another", and a "hide" control — or a quiet note
+// if nothing matched or we're offline.
+async function loadRecipePhoto(id) {
+  const box = $("rvPhoto"); if (!box) return;
+  box.className = "rv-photo loading";
+  box.innerHTML = `<div class="rv-photo-msg">Finding a photo…</div>`;
+  let r;
+  try { r = await Store.resolveRecipeImage(id); }
+  catch (e) { r = { status: "offline", url: "", count: 0 }; }
+  if (!state.viewing || state.viewing.id !== id) return;   // view moved on
+  paintRecipePhoto(id, r);
+}
+function paintRecipePhoto(id, r) {
+  const box = $("rvPhoto"); if (!box) return;
+  if (r.status === "ready" && r.url) {
+    const more = r.count > 1 ? `<button class="btn small" id="rvImgAnother">↻ Another</button>` : "";
+    box.className = "rv-photo";
+    box.innerHTML = `<img src="${r.url}" alt="" loading="lazy" onerror="this.parentNode.classList.add('broken')">
+      <div class="rv-photo-tools">${more}<button class="btn small" id="rvImgHide">✕ Hide</button></div>
+      <div class="rv-photo-credit">Photo: TheMealDB · may not match exactly</div>`;
+    const another = $("rvImgAnother");
+    if (another) another.onclick = async () => { const nx = await Store.cycleRecipeImage(id); paintRecipePhoto(id, nx); };
+    $("rvImgHide").onclick = async () => { await Store.clearRecipeImage(id); paintRecipePhoto(id, { status: "none", url: "", count: 0 }); };
+  } else {
+    const label = r.status === "offline" ? "Photo will load when you're online" : "No matching photo found";
+    box.className = "rv-photo empty";
+    box.innerHTML = `<div class="rv-photo-msg">${label} · <a href="#" id="rvImgRetry">search again</a></div>`;
+    $("rvImgRetry").onclick = async (e) => { e.preventDefault(); box.className = "rv-photo loading"; box.innerHTML = `<div class="rv-photo-msg">Searching…</div>`;
+      const nx = await Store.retryRecipeImage(id); if (state.viewing && state.viewing.id === id) paintRecipePhoto(id, nx); };
+  }
+}
 
 // ---------------------------------------------------------------- COOK MODE
 let wakeLock = null;

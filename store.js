@@ -88,6 +88,18 @@ function isoLocal(d) { const y = d.getFullYear(), m = String(d.getMonth() + 1).p
 function parseISO(iso) { return new Date(iso + "T00:00:00"); }
 function todayISO() { return isoLocal(new Date()); }
 function weekdayOf(iso) { return parseISO(iso).getDay(); }               // 0 Sun .. 6 Sat
+
+// Build progressively looser search queries from a recipe title, for matching a
+// dish photo on TheMealDB. Drops a trailing "with …" side, "&", and filler words.
+const IMG_FILLER = /\b(slow[- ]?cooked|slow cooker|easy|quick|classic|creamy|homemade|home[- ]?made|simple|best|family|hearty|one[- ]?pan|one[- ]?pot|sheet[- ]?pan|oven[- ]?baked|oven|baked|grilled|pan[- ]?fried|roast(ed)?|our|the|and|style|with)\b/g;
+function imageQueries(title) {
+  const base = (title || "").toLowerCase();
+  const noSide = base.split(/\bwith\b/)[0];
+  const clean = noSide.replace(/&/g, " ").replace(IMG_FILLER, " ").replace(/[^a-z\s]/g, " ").replace(/\s+/g, " ").trim();
+  const words = clean.split(" ").filter(Boolean);
+  const cand = [clean, words.slice(0, 3).join(" "), words.slice(0, 2).join(" "), words.slice(-2).join(" ")];
+  return [...new Set(cand.map((s) => s.trim()).filter((s) => s.length >= 3))];
+}
 function mostRecentWeekStart(iso, startDay) { const d = parseISO(iso); const diff = (d.getDay() - startDay + 7) % 7; d.setDate(d.getDate() - diff); return isoLocal(d); }
 function addDays(iso, n) { const d = parseISO(iso); d.setDate(d.getDate() + n); return isoLocal(d); }
 function daysBetween(a, b) { return Math.round((parseISO(b) - parseISO(a)) / 86400000); }
@@ -210,6 +222,55 @@ const Store = {
     return { ...this.recipeBrief(r), servings: r.servings, method_steps: r.method_steps || [], ingredients: clone(r.ingredients || []) };
   },
   async likeRecipe(id, v) { const r = this.recipeById(id); if (r) { r.liked = Math.max(-1, Math.min(1, v)); await this.persist(); } },
+
+  // ---- dish photos (auto-fetched per dish from TheMealDB, cached on device) ----
+  // Returns {status, url}. status: "ready" (have a url), "none" (searched, nothing),
+  // "offline" (couldn't reach the source — safe to retry later). Once fetched the
+  // image URLs are stored on the recipe and the service worker caches the picture
+  // itself, so it shows offline next time.
+  recipeImageUrl(id) { const r = this.recipeById(id); return (r && r.image_url) || ""; },
+  recipeImageCount(id) { const r = this.recipeById(id); return (r && r.image_candidates || []).length; },
+  async resolveRecipeImage(id) {
+    const r = this.recipeById(id); if (!r) return { status: "none", url: "", count: 0 };
+    if (r.image_url) return { status: "ready", url: r.image_url, count: (r.image_candidates || []).length };
+    if (r.image_none) return { status: "none", url: "", count: 0 };
+    if (typeof fetch !== "function") return { status: "offline", url: "", count: 0 };
+    let reached = false;
+    for (const q of imageQueries(r.title)) {
+      try {
+        const res = await fetch("https://www.themealdb.com/api/json/v1/1/search.php?s=" + encodeURIComponent(q));
+        if (!res.ok) continue;
+        reached = true;
+        const data = await res.json();
+        const thumbs = ((data && data.meals) || []).map((m) => m.strMealThumb).filter(Boolean);
+        if (thumbs.length) {
+          r.image_candidates = [...new Set(thumbs)]; r.image_idx = 0; r.image_url = r.image_candidates[0];
+          delete r.image_none; await this.persist();
+          return { status: "ready", url: r.image_url, count: r.image_candidates.length };
+        }
+      } catch (e) { /* network / CORS — try next query, then report offline */ }
+    }
+    if (reached) { r.image_none = true; await this.persist(); return { status: "none", url: "", count: 0 }; }
+    return { status: "offline", url: "", count: 0 };   // never reached the source; don't cache a negative
+  },
+  // Cycle to another candidate photo (when a search returned several dishes).
+  async cycleRecipeImage(id) {
+    const r = this.recipeById(id); const c = r && r.image_candidates;
+    if (!c || c.length < 2) return { status: r && r.image_url ? "ready" : "none", url: (r && r.image_url) || "", count: (c || []).length };
+    r.image_idx = ((r.image_idx || 0) + 1) % c.length; r.image_url = c[r.image_idx];
+    await this.persist(); return { status: "ready", url: r.image_url, count: c.length };
+  },
+  // Hide the photo for this dish (marks it as "no photo" so it won't refetch).
+  async clearRecipeImage(id) {
+    const r = this.recipeById(id); if (!r) return;
+    r.image_url = ""; r.image_candidates = []; r.image_idx = 0; r.image_none = true; await this.persist();
+  },
+  // Let the user ask for a fresh search after hiding/removing a photo.
+  async retryRecipeImage(id) {
+    const r = this.recipeById(id); if (!r) return { status: "none", url: "" };
+    r.image_url = ""; r.image_candidates = []; r.image_idx = 0; delete r.image_none; await this.persist();
+    return this.resolveRecipeImage(id);
+  },
   // full recipe search: text (title + ingredients), favourited, uses-freezer-meat, dietary, tags
   searchRecipes(opts = {}) {
     const servings = this.state.settings.servings_per_meal;
