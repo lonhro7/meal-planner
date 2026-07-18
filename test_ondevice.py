@@ -87,12 +87,12 @@ try:
         check(wd == 1, "plan now starts on Monday")
         ev("(async()=>await Store.saveSettings({week_start_day:0}))()")
 
-        print("9. Day preferences (multi-select: quick night + no-cook night)")
-        ev("""(async()=>{const dp=Store.getSettings().day_prefs; dp[2]=['quick']; dp[4]=['nocook']; await Store.saveSettings({day_prefs:dp}); await Store.regenerate({scope:'all',filter:{}});})()""")
+        print("9. Day preferences (per-row Yes/No: exclude a style + free night)")
+        ev("""(async()=>{const dp=Store.getSettings().day_prefs; dp[2]={long:false}; dp[4]={nocook:true}; await Store.saveSettings({day_prefs:dp}); await Store.regenerate({scope:'all',filter:{}});})()""")
         tod = ev("Store.getPlan().today")
-        check(ev(f"Store.getPlan().weeks.flatMap(w=>w.meals).filter(m=>m.date>='{tod}'&&m.recipe&&m.status==='planned'&&m.weekday===2).every(m=>m.recipe.cook_min<=25)"), "Tue quick nights <=25 min cook (today onward)")
-        check(ev(f"Store.getPlan().weeks.flatMap(w=>w.meals).filter(m=>m.date>='{tod}'&&m.weekday===4).every(m=>m.status==='away'&&m.note==='nocook-pref')"), "Thu no-cook nights left free (today onward)")
-        ev("""(async()=>{const dp=Store.getSettings().day_prefs; dp[2]=[]; dp[4]=[]; await Store.saveSettings({day_prefs:dp}); await Store.regenerate({scope:'all',filter:{}});})()""")
+        check(ev(f"Store.getPlan().weeks.flatMap(w=>w.meals).filter(m=>m.date>='{tod}'&&m.recipe&&m.status==='planned'&&m.weekday===2).every(m=>m.recipe.cook_min<45)"), "Tue 'Long cook = No' excludes long cooks (today onward)")
+        check(ev(f"Store.getPlan().weeks.flatMap(w=>w.meals).filter(m=>m.date>='{tod}'&&m.weekday===4).every(m=>m.status==='away'&&m.note==='nocook-pref')"), "Thu 'No cook = Yes' leaves the night free (today onward)")
+        ev("""(async()=>{const dp=Store.getSettings().day_prefs; dp[2]={}; dp[4]={}; await Store.saveSettings({day_prefs:dp}); await Store.regenerate({scope:'all',filter:{}});})()""")
 
         print("9b. Regenerate never changes past days")
         info = ev("(()=>{const p=Store.getPlan(); return {today:p.today, past:p.weeks[0].meals.map(m=>m.date).filter(d=>d<p.today)};})()")
@@ -214,20 +214,15 @@ try:
         }""")
         check(lmeta is None or "kJ/serve" in lmeta, f"leftover row shows kJ/serve ({lmeta!r})")
 
-        print("14d. Sunday never auto-generates as a leftover night")
-        # default day_prefs (no Sunday leftover pref) → no Sunday leftover from auto mode
-        ev("""(async()=>{ const s=Store.getSettings();
-          await Store.saveSettings({leftover_mode:'auto', day_prefs:{0:[],1:[],2:[],3:[],4:[],5:[],6:[]}});
+        print("14d. 'Leftover night = No' blocks leftovers on that weekday")
+        # Sunday set to No -> no leftovers land on Sunday
+        ev("""(async()=>{ const dp={0:{leftover:false},1:{},2:{},3:{},4:{},5:{},6:{}};
+          await Store.saveSettings({leftover_mode:'auto', day_prefs:dp});
           await Store.regenerate({scope:'all',filter:{}}); })()""")
         sun_lo = ev("Store.getPlan().weeks.flatMap(w=>w.meals).filter(m=>m.is_leftover && new Date(m.date+'T00:00').getDay()===0).length")
-        check(sun_lo == 0, f"no Sunday auto-leftovers ({sun_lo})")
-        # but if the user sets Sunday = Leftover night, it is allowed
-        ev("""(async()=>{ await Store.saveSettings({leftover_mode:'auto', day_prefs:{0:['leftover'],1:[],2:[],3:[],4:[],5:[],6:[]}});
-          await Store.regenerate({scope:'all',filter:{}}); })()""")
-        sun_ok = ev("Store.getPlan().weeks.flatMap(w=>w.meals).filter(m=>new Date(m.date+'T00:00').getDay()===0).length")
-        check(sun_ok > 0, "Sunday slots still exist when set as leftover night")
+        check(sun_lo == 0, f"Sunday 'Leftover night = No' -> no Sunday leftovers ({sun_lo})")
         # restore defaults for later tests
-        ev("(async()=>await Store.saveSettings({day_prefs:{0:[],1:[],2:[],3:[],4:[],5:[],6:[]}}))()")
+        ev("(async()=>await Store.saveSettings({day_prefs:{0:{},1:{},2:{},3:{},4:{},5:{},6:{}}}))()")
 
         print("14f. Leftover source cook is scaled up (serves double)")
         ev("(async()=>{ await Store.saveSettings({leftover_mode:'auto', servings_per_meal:4}); await Store.regenerate({scope:'all',filter:{}}); })()")

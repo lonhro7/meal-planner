@@ -442,9 +442,12 @@ function renderSettings() {
   const s = Store.getSettings();
   // weekdays listed in the household's week order, each a multi-select of preferences
   let dayRows = "";
-  for (let i = 0; i < 7; i++) { const wd = (s.week_start_day + i) % 7; const cur = s.day_prefs[wd] || [];
-    const chips = Store.DAY_PREF_OPTIONS.map(([v, l]) => `<button type="button" class="chip ${cur.includes(v) ? "on" : ""}" data-dpref="${wd}" data-dval="${v}">${l}</button>`).join("");
-    dayRows += `<div class="fl"><span class="fl-label">${DOW_FULL[wd]}</span><div class="chips">${chips}</div></div>`; }
+  const dpGreen = (dp, k) => { const v = (dp || {})[k]; if (v === undefined) return k !== "nocook"; return !!v; };
+  for (let i = 0; i < 7; i++) { const wd = (s.week_start_day + i) % 7; const cur = s.day_prefs[wd] || {};
+    const rows = Store.DAY_PREF_OPTIONS.map(([v, l]) => { const on = dpGreen(cur, v);
+      return `<div class="dp-row"><span class="dp-name">${l}</span>
+        <button type="button" class="dp-toggle ${on ? "yes" : "no"}" data-dpref="${wd}" data-dval="${v}">${on ? "Yes" : "No"}</button></div>`; }).join("");
+    dayRows += `<details class="dp-day"><summary>${DOW_FULL[wd]}</summary><div class="dp-list">${rows}</div></details>`; }
   const weekOpts = [0,1,2,3,4,5,6].map((d) => `<option value="${d}" ${s.week_start_day === d ? "selected" : ""}>${DOW_FULL[d]}</option>`).join("");
   const cap = (x) => x.charAt(0).toUpperCase() + x.slice(1);
   const priceRows = Store.getMeatCuts().map((c) => {
@@ -509,7 +512,7 @@ function renderSettings() {
     ${meatPrefRows}</div>
 
     <div class="card"><h2>Day preferences</h2>
-    <div class="small muted" style="margin-bottom:8px">Tick any that apply to each night (you can pick more than one). “Light” = lower-kilojoule meals. “Early prep / slow cook” = set-and-forget or a 10–15 min finish when you get home. “No cook” leaves that night free.</div>
+    <div class="small muted" style="margin-bottom:10px">Tap a day to expand it. Each row is a Yes/No toggle — <b>green Yes</b> = allowed, <b>red No</b> = not for that day. When you regenerate, each day only uses its Yes rows (plus all your other filters). “Light” = lower-kilojoule. “Early prep / slow cook” = set-and-forget. “Leftover night” green lets leftovers land here; No blocks them. “No cook” defaults to No (a meal is planned) — switch it to Yes to make that day a free night.</div>
     ${dayRows}</div>
 
     <details class="card"><summary style="font-weight:600;font-size:15px;color:var(--text)">🥩 Meat pricing (optional)</summary>
@@ -533,9 +536,13 @@ function renderSettings() {
   $("s_hp").onchange = async () => { await Store.saveSettings({ high_protein_g: +$("s_hp").value || 0 }); toast("Saved"); };
   $("s_lc").onchange = async () => { await Store.saveSettings({ low_carb_g: +$("s_lc").value || 0 }); toast("Saved"); };
   document.querySelectorAll("[data-dpref]").forEach((b) => b.onclick = async () => {
-    const wd = b.dataset.dpref, v = b.dataset.dval; const dp = Store.getSettings().day_prefs; const arr = dp[wd] || [];
-    const i = arr.indexOf(v); if (i >= 0) arr.splice(i, 1); else arr.push(v); dp[wd] = arr;
-    b.classList.toggle("on"); await Store.saveSettings({ day_prefs: dp });
+    const wd = b.dataset.dpref, v = b.dataset.dval; const dp = Store.getSettings().day_prefs;
+    const day = dp[wd] || {}; const cur = dpGreen(day, v); const next = !cur;
+    // store only when it differs from the row's default (keeps saved data tidy)
+    const dflt = v !== "nocook";
+    if (next === dflt) delete day[v]; else day[v] = next;
+    dp[wd] = day; await Store.saveSettings({ day_prefs: dp });
+    b.className = `dp-toggle ${next ? "yes" : "no"}`; b.textContent = next ? "Yes" : "No";
   });
   document.querySelectorAll("[data-freq]").forEach((sl) => {
     const key = sl.dataset.freq, lbl = document.querySelector(`[data-freqlbl="${key}"]`);

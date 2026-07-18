@@ -16,9 +16,12 @@ const LEFTOVER_SCORE = { fresh: 0, ok: 2, excellent: 3 };
 function leftoverScore(r) { return LEFTOVER_SCORE[(r && r.leftover) || "fresh"] || 0; }
 const MEAT_TYPES = ["Beef","Chicken","Lamb","Pork","Sausage","Smallgoods","Fish","Other"];
 const LEFTOVER_LABELS = { fresh: "Best fresh", ok: "OK leftovers", excellent: "Excellent leftovers" };
-// day-preference options (multi-select). "nocook" = no cooking that night; "slowcook" =
-// something you can prep early and slow-cook / finish in 10-15 min when home.
-const DAY_PREF_OPTIONS = [["quick","Quick & easy"],["long","Long cook OK"],["slowcook","Early prep / slow cook"],["leftover","Leftover night"],["light","Light (lower kJ)"],["nocook","No cook"]];
+// day-preference rows. Each is a Yes(green)/No(red) toggle per weekday. Green = allowed,
+// red = excluded. All default green EXCEPT "nocook" which defaults red (i.e. cook, not free).
+// Order is the on-screen order.
+const DAY_PREF_OPTIONS = [["quick","Quick and easy"],["slowcook","Early prep / slow cook"],["long","Long cook"],["light","Light"],["leftover","Leftover night"],["nocook","No cook"]];
+// True when a row is green (allowed) for a day. Absent = default: green for all rows, red for "nocook".
+function dayGreen(dp, key) { const v = (dp || {})[key]; if (v === undefined) return key !== "nocook"; return !!v; }
 const AVG_SAUSAGE_KG = 0.1;  // assumed weight per sausage, for $/kg pricing of sausages
 // approx weight per piece (kg) for cuts counted "whole" in recipes, so they can be priced $/kg
 const PIECE_KG = {
@@ -163,12 +166,11 @@ const Store = {
   migrate() {
     const s = this.state.settings;
     if (s.week_start_day == null) s.week_start_day = 0;
-    if (!s.day_prefs) s.day_prefs = { 0:[],1:[],2:[],3:[],4:[],5:[],6:[] };
-    // convert any old single-string day prefs to arrays ("any" -> [])
+    if (!s.day_prefs) s.day_prefs = { 0:{},1:{},2:{},3:{},4:{},5:{},6:{} };
+    // day prefs are now per-row Yes/No objects; convert any older string/array form to {}
     for (let d = 0; d < 7; d++) {
       const v = s.day_prefs[d];
-      if (v == null) s.day_prefs[d] = [];
-      else if (typeof v === "string") s.day_prefs[d] = v === "any" ? [] : [v];
+      if (v == null || Array.isArray(v) || typeof v !== "object") s.day_prefs[d] = {};
     }
     if (!s.leftover_mode || s.leftover_mode === "dinners") s.leftover_mode = "auto";
     if (s.high_protein_g == null) s.high_protein_g = 30;
@@ -197,7 +199,7 @@ const Store = {
         weekly_budget: 0, leftover_mode: "auto", week_start_day: 0,
         high_protein_g: 30, low_carb_g: 30, meat_prices: {},
         meat_max_pct: {}, meat_allowed_cuts: {},
-        day_prefs: { 0:[],1:[],2:[],3:[],4:[],5:[],6:[] },
+        day_prefs: { 0:{},1:{},2:{},3:{},4:{},5:{},6:{} },
       },
       seq: { recipe: recipes.length + 1, pantry: 1, meal: 1 },
     };
@@ -557,8 +559,8 @@ const Store = {
     // pre-count meats already fixed on non-target (locked/past) nights.
     const planNights = this.state.meals.filter((m) => {
       if (m.status === "away") return false;
-      const pr = (s.day_prefs && s.day_prefs[weekdayOf(m.date)]) || [];
-      if (targetDates.has(m.date) && pr.includes("nocook")) return false;
+      const pr = (s.day_prefs && s.day_prefs[weekdayOf(m.date)]) || {};
+      if (targetDates.has(m.date) && dayGreen(pr, "nocook")) return false;  // green nocook = free night
       return true;
     }).length;
     const maxCount = {};
@@ -605,28 +607,31 @@ const Store = {
       }
       if (!targetDates.has(m.date)) continue;
 
-      // target slot to fill
-      const prefs = (s.day_prefs && s.day_prefs[weekdayOf(m.date)]) || [];
+      // target slot to fill — day preferences are per-row Yes(green)/No(red) toggles
+      const dp = (s.day_prefs && s.day_prefs[weekdayOf(m.date)]) || {};
+      const green = (k) => dayGreen(dp, k);
 
-      // "no cook" night — leave it as a no-cook slot (excluded from shopping)
-      if (prefs.includes("nocook")) { m.status = "away"; m.recipe_id = null; m.source_meal_id = null; m.note = "nocook-pref"; lastProtein = ""; continue; }
+      // "No cook" green = free night (nothing cooked or shopped). Default is red (cook).
+      if (green("nocook")) { m.status = "away"; m.recipe_id = null; m.source_meal_id = null; m.note = "nocook-pref"; lastProtein = ""; continue; }
 
-      // Sunday is never auto-filled as a leftover night unless the user has
-      // explicitly set the Sunday day preference to "Leftover night".
-      const sundayBlocksAuto = weekdayOf(m.date) === 0 && !prefs.includes("leftover");
-      if (pendingAuto && !sundayBlocksAuto && daysBetween(pendingAuto.date, m.date) >= 1 && daysBetween(pendingAuto.date, m.date) <= 3) {
+      // Leftovers may auto-land here only if the "Leftover night" row is green (default).
+      if (pendingAuto && green("leftover") && daysBetween(pendingAuto.date, m.date) >= 1 && daysBetween(pendingAuto.date, m.date) <= 3) {
         const src = this.mealById(pendingAuto.mealId);
         if (src && src.recipe_id) { placeLeftover(m, src); pendingAuto = null; filled++; continue; }
         pendingAuto = null;
       }
-      if (prefs.includes("leftover")) {
-        const src = recentSource(m.date);
-        if (src) { placeLeftover(m, src); filled++; continue; }
-      }
-      const eff = this.applyDayPrefs(filt || {}, prefs);
-      let choice = this.pick(freqOk(this.candidates(eff, servings)), recent.slice(-4), lastProtein, availMeats);
-      if (!choice) choice = this.pick(freqOk(this.candidates(filt || {}, servings)), recent.slice(-4), lastProtein, availMeats);
-      if (!choice) continue;   // strict: nothing fits the caps/cut rules — leave the night empty
+      // Style rows: a red row removes that style from this day's options.
+      const styleOk = (r) => {
+        if (!green("quick") && r.prep_min <= 15 && r.cook_min <= 25) return false;
+        if (!green("slowcook") && (r.tags || []).includes("slow-cook")) return false;
+        if (!green("long") && r.cook_min >= 45) return false;
+        if (!green("light") && (r.weight_loss_rating || 0) >= 4) return false;
+        return true;
+      };
+      const base = freqOk(this.candidates(filt || {}, servings));
+      let choice = this.pick(base.filter(styleOk), recent.slice(-4), lastProtein, availMeats);
+      if (!choice) choice = this.pick(base, recent.slice(-4), lastProtein, availMeats);   // relax styles rather than leave empty
+      if (!choice) continue;   // nothing fits the meat caps/cut rules — leave the night empty
       m.recipe_id = choice.id; m.status = "planned"; recent.push(choice.id); lastProtein = this.primaryProtein(choice);
       const cmt = this.primaryProtein(choice); if (cmt) meatCount[cmt] = (meatCount[cmt] || 0) + 1;
       cooks.push({ meal: m, rating: leftoverScore(choice), date: m.date }); filled++;
