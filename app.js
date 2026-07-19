@@ -485,7 +485,7 @@ function renderSettings() {
       <input type="number" step="any" data-mp="${c.key}" data-mode="${mode}" data-weight="${pieceW}" value="${shown}" placeholder="~${ph}" style="width:110px"></div>`;
   }).join("");
   // per-meat frequency caps (% of dinners) + allowed-cuts restriction
-  const meatPrefRows = Store.MEAT_TYPES.filter((t) => t !== "Other").map((type) => {
+  const meatPrefRows = [...Store.MEAT_TYPES.filter((t) => t !== "Other"), "Vegetarian"].map((type) => {
     const key = type.toLowerCase();
     const pct = s.meat_max_pct ? s.meat_max_pct[key] : null;
     const val = (pct == null) ? 100 : pct;
@@ -528,7 +528,7 @@ function renderSettings() {
     <div class="small muted" style="margin-top:8px">These set what the High-protein and Low-carb filters mean.</div></div>
 
     <div class="card"><h2>Meat preferences</h2>
-    <div class="small muted" style="margin-bottom:10px">Cap how often each meat appears (as a share of your dinners), and restrict it to specific cuts if you like — leave a meat on “Any cut” for no restriction. These apply when you regenerate. Strict: if nothing fits, a night is left empty rather than breaking a rule.</div>
+    <div class="small muted" style="margin-bottom:10px">Cap how often each meat — or vegetarian — appears (as a share of your dinners), and restrict a meat to specific cuts if you like (leave it on “Any cut” for no restriction). These apply when you regenerate. Strict: if nothing fits, a night is left empty rather than breaking a rule.</div>
     ${meatPrefRows}</div>
 
     <div class="card"><h2>Day preferences</h2>

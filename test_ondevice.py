@@ -314,6 +314,10 @@ try:
         # chicken left unrestricted still allowed
         chk_ok = ev("""(()=>{const r=Store.state.recipes.find(x=>(x.ingredients||[]).some(i=>i.is_meat&&i.meat_type==='chicken')); return r?Store.passesCutPrefs(r):'no-recipe';})()""")
         check(chk_ok is True, "unrestricted chicken recipe still allowed")
+        # vegetarian treated as a capped pseudo-protein: 0% -> no meat-free dinners
+        ev("(async()=>{ await Store.saveSettings({meat_max_pct:{vegetarian:0}, meat_allowed_cuts:{}}); await Store.regenerate({scope:'all',filter:{}}); })()")
+        veg0 = ev("Store.getPlan().weeks.flatMap(w=>w.meals).filter(m=>m.status==='planned'&&m.recipe).filter(m=>!Store.primaryProtein(Store.recipeById(m.recipe.id))).length")
+        check(veg0 == 0, f"vegetarian 0% cap -> zero meat-free dinners ({veg0})")
         ev("(async()=>await Store.saveSettings({meat_max_pct:{}, meat_allowed_cuts:{}}))()")
 
         print("17. Ingredient units (kg/L, can sizes) + swap updates leftovers")

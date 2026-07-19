@@ -570,13 +570,14 @@ const Store = {
     const meatCount = {};
     for (const m of this.state.meals) {
       if (targetDates.has(m.date) || m.status !== "planned" || !m.recipe_id) continue;
-      const rr = this.recipeById(m.recipe_id); const mt = rr ? this.primaryProtein(rr) : "";
+      const rr = this.recipeById(m.recipe_id); const mt = rr ? (this.primaryProtein(rr) || "vegetarian") : "";
       if (mt) meatCount[mt] = (meatCount[mt] || 0) + 1;
     }
-    // strip candidates whose protein has hit its cap (strict — no relaxing to fill)
+    // strip candidates whose protein has hit its cap (strict — no relaxing to fill).
+    // A recipe with no meat counts as "vegetarian" so it can be capped too.
     const freqOk = (list) => list.filter((r) => {
-      const mt = this.primaryProtein(r);
-      if (!mt || !(mt in maxCount)) return true;
+      const mt = this.primaryProtein(r) || "vegetarian";
+      if (!(mt in maxCount)) return true;
       return (meatCount[mt] || 0) < maxCount[mt];
     });
 
@@ -633,7 +634,7 @@ const Store = {
       if (!choice) choice = this.pick(base, recent.slice(-4), lastProtein, availMeats);   // relax styles rather than leave empty
       if (!choice) continue;   // nothing fits the meat caps/cut rules — leave the night empty
       m.recipe_id = choice.id; m.status = "planned"; recent.push(choice.id); lastProtein = this.primaryProtein(choice);
-      const cmt = this.primaryProtein(choice); if (cmt) meatCount[cmt] = (meatCount[cmt] || 0) + 1;
+      const cmt = this.primaryProtein(choice) || "vegetarian"; meatCount[cmt] = (meatCount[cmt] || 0) + 1;
       cooks.push({ meal: m, rating: leftoverScore(choice), date: m.date }); filled++;
       if (s.leftover_mode === "auto" && leftoverScore(choice) >= 3) pendingAuto = { mealId: m.id, date: m.date };
     }
