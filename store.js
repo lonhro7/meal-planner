@@ -650,7 +650,19 @@ const Store = {
     return this.generate(dates, filter || {});
   },
   async setLock(id, locked) { const m = this.mealById(id); if (m) { m.locked = locked; await this.persist(); } },
-  async swap(id, recipeId) { const m = this.mealById(id); if (m) { m.recipe_id = recipeId; m.status = "planned"; m.source_meal_id = null; await this.persist(); } },
+  async swap(id, recipeId) {
+    const m = this.mealById(id); if (!m) return;
+    m.recipe_id = recipeId; m.status = "planned"; m.source_meal_id = null;
+    // any leftover nights fed by this meal now follow the new recipe (or are cleared if it can't do leftovers)
+    const r = this.recipeById(recipeId); const canLeftover = r ? leftoverScore(r) >= 2 : false;
+    this.state.meals.forEach((x) => {
+      if (x.status === "leftover" && x.source_meal_id === m.id) {
+        if (canLeftover) { x.recipe_id = recipeId; }
+        else { x.status = "empty"; x.recipe_id = null; x.source_meal_id = null; }   // new dish isn't leftover-friendly
+      }
+    });
+    await this.persist();
+  },
   // add a recipe to the plan: to a given date, else the first empty (non-away, unlocked) slot
   async addToPlan(recipeId, date) {
     this.getPlan();

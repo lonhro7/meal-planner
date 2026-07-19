@@ -316,6 +316,27 @@ try:
         check(chk_ok is True, "unrestricted chicken recipe still allowed")
         ev("(async()=>await Store.saveSettings({meat_max_pct:{}, meat_allowed_cuts:{}}))()")
 
+        print("17. Ingredient units (kg/L, can sizes) + swap updates leftovers")
+        check(ev("ingQty({quantity:1000,unit:'g',name:'x'},1)") == "1 kg", "1000 g shows as 1 kg")
+        check(ev("ingQty({quantity:1500,unit:'ml',name:'x'},1)") == "1.5 L", "1500 ml shows as 1.5 L")
+        check(ev("ingQty({quantity:1,unit:'can',name:'Tinned diced tomatoes'},1)") == "1 × 400 g can", "1 can tomatoes shows 400 g")
+        check(ev("ingQty({quantity:2,unit:'can',name:'Coconut milk'},1)") == "2 × 400 ml cans", "2 cans coconut show 400 ml + plural")
+        # swapping a leftover source updates the dependent leftover night
+        ev("(async()=>{ await Store.saveSettings({leftover_mode:'auto', day_prefs:{0:{},1:{},2:{},3:{},4:{},5:{},6:{}}, meat_max_pct:{}, meat_allowed_cuts:{}}); await Store.regenerate({scope:'all',filter:{}}); })()")
+        sw = ev("""(async()=>{ const meals=Store.state.meals;
+          const lo=meals.find(m=>m.status==='leftover' && m.source_meal_id); if(!lo) return {skip:true};
+          const src=meals.find(m=>m.id===lo.source_meal_id);
+          const exc=Store.state.recipes.find(r=>r.leftover==='excellent' && r.id!==src.recipe_id);
+          await Store.swap(src.id, exc.id);
+          const a=Store.state.meals.find(m=>m.id===lo.id); const followed=(a.status==='leftover' && a.recipe_id===exc.id);
+          const fresh=Store.state.recipes.find(r=>r.leftover==='fresh');
+          await Store.swap(src.id, fresh.id);
+          const b=Store.state.meals.find(m=>m.id===lo.id); const cleared=(b.status==='empty' && !b.recipe_id);
+          return {skip:false, followed, cleared}; })()""")
+        if not sw.get("skip"):
+            check(sw["followed"], "swap to leftover-friendly recipe -> leftover follows it")
+            check(sw["cleared"], "swap to a 'fresh' recipe -> dependent leftover cleared")
+
         print("15. Export / reset / restore round-trip")
         base = ev("Store.listRecipes().length")
         exp = ev("JSON.stringify(Store.exportData())")

@@ -27,6 +27,26 @@ function qtyLabelSmart(q, unit) {
   if (unit === "ml" && q >= 1000) return `${trimNum(q / 1000)} L`;
   return qtyLabel(q, unit);
 }
+// standard Australian can/tin sizes so recipes show a real weight, not just "1 can"
+function canSize(name) {
+  const n = (name || "").toLowerCase();
+  if (n.includes("coconut")) return "400 ml";
+  if (n.includes("creamed corn")) return "420 g";
+  if (n.includes("pineapple")) return "425 g";
+  if (n.includes("tuna")) return "425 g";
+  if (n.includes("water chestnut")) return "225 g";
+  return "400 g";   // diced tomatoes, all beans, chickpeas, lentils, corn, etc.
+}
+// full ingredient quantity label: kg/L smart, and cans shown with their standard size
+function ingQty(x, scale) {
+  const q = (x.quantity || 0) * (scale || 1), unit = x.unit;
+  if (unit === "can" || unit === "tin") {
+    const n = Math.round(q * 10) / 10, v = Number.isInteger(n) ? n : n.toFixed(1);
+    const word = n > 1 ? unit + "s" : unit;
+    return `${v} × ${canSize(x.name)} ${word}`;
+  }
+  return qtyLabelSmart(q, unit);
+}
 
 // ---------------------------------------------------------------- tabs
 document.querySelectorAll("nav.tabs button").forEach((b) => {
@@ -243,7 +263,7 @@ function renderShopping() {
   if (!cats.length) html += `<div class="empty-note">Nothing to buy — pantry covers this week, or no meals planned.</div>`;
   cats.forEach((c) => { html += `<div class="cat-head">${c}</div>`;
     g.by_category[c].forEach((it) => { html += `<label class="list-item"><input type="checkbox" class="tick">
-      <span class="name">${it.name}</span><span class="qty">${qtyLabel(it.buy_qty, it.unit)}${it.est_cost ? " · $" + it.est_cost.toFixed(2) : ""}</span></label>`; });
+      <span class="name">${it.name}</span><span class="qty">${ingQty({ quantity: it.buy_qty, unit: it.unit, name: it.name }, 1)}${it.est_cost ? " · $" + it.est_cost.toFixed(2) : ""}</span></label>`; });
   });
   html += `<div class="total-bar"><span>Estimated spend</span><span class="amt">$${g.estimated_cost.toFixed(2)}</span></div>`;
   if (g.weekly_budget > 0) html += `<div class="row"><span class="pill ${g.over_budget ? "bad" : "good"}">Budget $${g.weekly_budget.toFixed(2)} — ${g.over_budget ? "over" : "within"}</span></div>`;
@@ -595,7 +615,7 @@ function openRecipeView(recipeId, servings) {
   const macros = `${r.kj} kJ · ${r.protein_g} g protein · ${r.carbs_g} g carbs · ${r.fat_g} g fat`;
   const ings = (r.ingredients || []).slice().sort((a, b) => (a.step_index || 0) - (b.step_index || 0));
   const ingHtml = ings.length
-    ? ings.map((x) => `<li>${qtyLabel(x.quantity * scale, x.unit)} ${x.name}${x.optional ? " (optional)" : ""}</li>`).join("")
+    ? ings.map((x) => `<li>${ingQty(x, scale)} ${x.name}${x.optional ? " (optional)" : ""}</li>`).join("")
     : `<li class="muted">No ingredients recorded.</li>`;
   const steps = r.method_steps && r.method_steps.length ? r.method_steps : ["No method steps recorded."];
   const stepHtml = steps.map((s, i) => `<li><span class="rv-stepn">${i + 1}</span><span>${s}</span></li>`).join("");
@@ -665,7 +685,7 @@ function drawCook() {
   const i = Math.max(0, Math.min(step, steps.length - 1));
   $("stepNum").textContent = `Step ${i + 1} of ${steps.length}`; $("stepText").textContent = steps[i];
   const ings = recipe.ingredients.filter((x) => x.step_index === i);
-  $("stepIngs").innerHTML = ings.length ? ings.map((x) => `<div>• ${qtyLabel(x.quantity * scale, x.unit)} ${x.name}${x.optional ? " (optional)" : ""}</div>`).join("") : `<div class="muted">— use ingredients as needed —</div>`;
+  $("stepIngs").innerHTML = ings.length ? ings.map((x) => `<div>• ${ingQty(x, scale)} ${x.name}${x.optional ? " (optional)" : ""}</div>`).join("") : `<div class="muted">— use ingredients as needed —</div>`;
   $("prevStep").disabled = i === 0; $("nextStep").textContent = i === steps.length - 1 ? "Done ✓" : "Next ▶";
 }
 $("nextStep").onclick = () => { const steps = state.cook.recipe.method_steps.length || 1; if (state.cook.step >= steps - 1) closeCook(); else { state.cook.step++; drawCook(); } };
