@@ -262,36 +262,36 @@ try:
         ev("""window.__real = window.fetch; window.__q = [];
           window.fetch = async (u) => { window.__q.push(u);
             return { ok:true, json: async () => ({ meals:[{strMealThumb:'https://img/a.jpg'},{strMealThumb:'https://img/b.jpg'}] }) }; };""")
-        img = ev("""(async()=>{ const r=Store.state.recipes.find(x=>x.title==='Beef Stroganoff');
+        img = ev("""(async()=>{ const r=Store.state.recipes[0];
           ['image_url','image_none','image_candidates','image_idx'].forEach(k=>delete r[k]);
           const res=await Store.resolveRecipeImage(r.id); return {status:res.status,url:res.url,count:res.count,saved:r.image_url}; })()""")
         check(img["status"]=="ready" and img["url"] and img["saved"]==img["url"], f"photo resolved & cached ({img['url']})")
         check(img["count"]>=2, "multiple candidate photos captured")
         # query is cleaned (drops the "with …" side)
-        ev("""(async()=>{ const r=Store.state.recipes.find(x=>x.title==='Beef Burgers with Chips');
+        ev("""(async()=>{ const r=Store.state.recipes[1];
           ['image_url','image_none','image_candidates','image_idx'].forEach(k=>delete r[k]); window.__q=[]; await Store.resolveRecipeImage(r.id); })()""")
         q0 = ev("decodeURIComponent((window.__q[0].split('s=')[1]||''))")
         check("with" not in q0 and "chips" not in q0, f"search query stripped filler/side ({q0!r})")
         # cycle to another candidate
-        cyc = ev("""(async()=>{ const r=Store.state.recipes.find(x=>x.title==='Beef Stroganoff'); const a=r.image_url;
+        cyc = ev("""(async()=>{ const r=Store.state.recipes[0]; const a=r.image_url;
           const res=await Store.cycleRecipeImage(r.id); return {a, b:res.url}; })()""")
         check(cyc["a"] != cyc["b"], "‘Another’ cycles to a different photo")
         # hide marks it as none (won't refetch)
-        hid = ev("""(async()=>{ const r=Store.state.recipes.find(x=>x.title==='Beef Stroganoff');
+        hid = ev("""(async()=>{ const r=Store.state.recipes[0];
           await Store.clearRecipeImage(r.id); return {url:r.image_url, none:!!r.image_none}; })()""")
         check(hid["url"]=="" and hid["none"], "hide removes photo and stops refetching")
         # offline: fetch throws → status offline, NOT cached as a negative
         ev("(()=>{ window.fetch = async () => { throw new Error('offline'); }; })()")
-        off = ev("""(async()=>{ const r=Store.state.recipes.find(x=>x.title==='Beef Tacos');
+        off = ev("""(async()=>{ const r=Store.state.recipes[2];
           ['image_url','image_none','image_candidates','image_idx'].forEach(k=>delete r[k]);
           const res=await Store.resolveRecipeImage(r.id); return {status:res.status, none:!!r.image_none}; })()""")
         check(off["status"]=="offline" and not off["none"], "offline is not cached as ‘no photo’")
         # back online → resolves
         ev("(()=>{ window.fetch = async () => ({ ok:true, json: async () => ({ meals:[{strMealThumb:'https://img/c.jpg'}] }) }); })()")
-        ret = ev("(async()=>{ const r=Store.state.recipes.find(x=>x.title==='Beef Tacos'); return (await Store.resolveRecipeImage(r.id)).status; })()")
+        ret = ev("(async()=>{ const r=Store.state.recipes[2]; return (await Store.resolveRecipeImage(r.id)).status; })()")
         check(ret=="ready", "retries successfully once back online")
         # recipe view renders the <img>
-        ev("(()=>{ const r=Store.state.recipes.find(x=>x.title==='Beef Tacos'); openRecipeView(r.id); return true; })()")
+        ev("(()=>{ const r=Store.state.recipes[2]; openRecipeView(r.id); return true; })()")
         pg.wait_for_selector("#recipeView.open #rvPhoto img", timeout=4000)
         check(pg.evaluate("!!document.querySelector('#rvPhoto img')"), "recipe view shows the dish photo")
         pg.eval_on_selector("#rvClose", "el=>el.click()")
@@ -363,14 +363,16 @@ try:
             check(far["placed"], f"leftover placed on a day >3 days out ({far['gap']} days)")
 
         print("19. Seed re-sync + fridge/freezer plan filter")
-        # simulate an old cached install: wipe a recipe's content, bump like, drop seed_version -> reseed refreshes it
-        res = ev("""(()=>{ const r=Store.state.recipes.find(x=>x.title==='Spaghetti Bolognese'); const id=r.id;
-          r.ingredients=[]; r.method_steps=['old lumped step']; r.liked=1;
+        # simulate an old cached install: rename a recipe (old title), wipe content, bump like, drop seed_version
+        res = ev("""(()=>{ const r=Store.state.recipes[0]; const id=r.id; const before=Store.state.recipes.length;
+          r.title='OLD TITLE'; r.ingredients=[]; r.method_steps=['old lumped step']; r.liked=1;
           Store.state.seed_version=0; Store.reseed();
-          const r2=Store.recipeById(id);
-          return {restored: r2.ingredients.length>3, sameId: r2.id===id, keptLike: r2.liked===1, steps: r2.method_steps.length, ver: Store.state.seed_version}; })()""")
-        check(res["restored"] and res["sameId"] and res["keptLike"] and res["ver"] >= 3,
-              f"reseed refreshes recipe content, keeps id + like ({res})")
+          const r2=Store.recipeById(id); const after=Store.state.recipes.length;
+          const dup=Store.state.recipes.filter(x=>x.title==='OLD TITLE').length;
+          return {restored: r2.ingredients.length>3, sameId: r2.id===id, keptLike: r2.liked===1,
+            renamed: r2.title!=='OLD TITLE', noDup: dup===0 && after===before, ver: Store.state.seed_version}; })()""")
+        check(res["restored"] and res["sameId"] and res["keptLike"] and res["renamed"] and res["noDup"] and res["ver"] >= 4,
+              f"reseed refreshes + renames in place, keeps id + like, no duplicate ({res})")
         # fridge/freezer filter: stock chicken in the freezer, regenerate uses_freezer -> every meal uses freezer meat
         ev("""(async()=>{ await Store.saveSettings({meat_max_pct:{}, meat_allowed_cuts:{}, day_prefs:{0:{},1:{},2:{},3:{},4:{},5:{},6:{}}});
           await Store.addPantry({category:'meat',is_meat:true,meat_type:'Chicken',meat_cut:'thigh fillet',quantity:3000,unit:'g',location:'freezer'});

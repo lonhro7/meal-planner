@@ -704,6 +704,7 @@ function openRecipeView(recipeId, servings) {
      <div class="rv-summary">${r.total_min} min (prep ${r.prep_min} + cook ${r.cook_min}) · serves ${serves}</div>
      <div class="rv-summary">${macros} · per serve</div>
      ${r.leftover_label ? `<div class="rv-summary">Leftovers: ${r.leftover_label}</div>` : ""}
+     ${r.source_url ? `<div class="rv-summary">Source: <a href="${r.source_url}" target="_blank" rel="noopener">${r.source_name || "recipe"}</a></div>` : ""}
      <h4 class="rv-h">Ingredients</h4><ul class="rv-ings">${ingHtml}</ul>
      <h4 class="rv-h">Method</h4><ol class="rv-steps">${stepHtml}</ol>`;
   $("recipeView").classList.add("open");

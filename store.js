@@ -24,7 +24,7 @@ const DAY_PREF_OPTIONS = [["quick","Quick and easy"],["slowcook","Early prep / s
 function dayGreen(dp, key) { const v = (dp || {})[key]; if (v === undefined) return key !== "nocook"; return !!v; }
 // Bump when the built-in recipe library (seed.js) content changes so existing
 // installs refresh their seed recipes instead of keeping the old cached copies.
-const SEED_VERSION = 3;
+const SEED_VERSION = 4;
 const AVG_SAUSAGE_KG = 0.1;  // assumed weight per sausage, for $/kg pricing of sausages
 // approx weight per piece (kg) for cuts counted "whole" in recipes, so they can be priced $/kg
 const PIECE_KG = {
@@ -194,20 +194,22 @@ const Store = {
   // each recipe's like/cook counts, and leaves the user's own recipes untouched.
   reseed() {
     if ((this.state.seed_version || 0) >= SEED_VERSION) return;
-    const byTitle = {};
-    this.state.recipes.forEach((r) => { byTitle[r.title] = r; });
-    SEED_RECIPES.forEach((sr) => {
-      const ex = byTitle[sr.title];
-      if (ex && ex.user_edited) {
-        // leave user-edited recipes exactly as they are
-      } else if (ex) {
-        const id = ex.id, liked = ex.liked || 0, times = ex.times_cooked || 0;
+    // Built-in recipes occupy ids 1..N by their position in the seed. Matching by
+    // position (not title) means a recipe that gets renamed refreshes in place
+    // rather than creating a duplicate. User recipes have higher ids and are left alone.
+    const byId = {}; this.state.recipes.forEach((r) => { byId[r.id] = r; });
+    SEED_RECIPES.forEach((sr, i) => {
+      const id = i + 1, ex = byId[id];
+      if (ex && ex.user_edited) return;                 // keep the user's edits
+      if (ex) {
+        const liked = ex.liked || 0, times = ex.times_cooked || 0;
         Object.keys(ex).forEach((k) => delete ex[k]);
         Object.assign(ex, clone(sr), { id, liked, times_cooked: times });
       } else {
-        this.state.recipes.push({ id: this.state.seq.recipe++, liked: 0, times_cooked: 0, ...clone(sr) });
+        this.state.recipes.push({ id, liked: 0, times_cooked: 0, ...clone(sr) });
       }
     });
+    if (this.state.seq.recipe <= SEED_RECIPES.length) this.state.seq.recipe = SEED_RECIPES.length + 1;
     this.state.seed_version = SEED_VERSION;
   },
   DAY_PREF_OPTIONS,
