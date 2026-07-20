@@ -341,6 +341,23 @@ try:
             check(sw["followed"], "swap to leftover-friendly recipe -> leftover follows it")
             check(sw["cleared"], "swap to a 'fresh' recipe -> dependent leftover cleared")
 
+        print("18. Recipe update + broadened leftover placement")
+        uid = ev("""(async()=>{ const id=await Store.addRecipe({title:'Test Edit Recipe',leftover:'fresh',tags:[]});
+          await Store.updateRecipe(id,{ingredients:[{name:'Onion',quantity:1,unit:'whole',category:'veg',is_meat:false,meat_type:'',meat_cut:'',optional:false,price_per_unit:0,step_index:0}],
+            method_steps:['Chop the onion.'], kj:2100, protein_g:12});
+          const r=Store.recipeById(id); return {ings:r.ingredients.length, steps:r.method_steps.length, kj:r.kj, p:r.protein_g}; })()""")
+        check(uid["ings"] == 1 and uid["steps"] == 1 and uid["kj"] == 2100 and uid["p"] == 12, f"updateRecipe applies ingredients/method/nutrition ({uid})")
+        ev("(async()=>{ await Store.saveSettings({day_prefs:{0:{},1:{},2:{},3:{},4:{},5:{},6:{}}}); await Store.regenerate({scope:'all',filter:{}}); })()")
+        far = ev("""(async()=>{ const src=[...Store.state.meals].sort((a,b)=>a.date.localeCompare(b.date)).find(m=>m.status==='planned');
+          const days=Store.eligibleLeftoverDays(src.id); if(!days.length) return {skip:true};
+          const maxgap=Math.max(...days.map(d=>d.gap)); const target=days.find(d=>d.gap>3);
+          if(!target) return {skip:true, maxgap};
+          await Store.setLeftoverPlacement(src.id, target.date); const t=Store.mealByDate(target.date);
+          return {skip:false, maxgap, placed:(t.status==='leftover' && t.source_meal_id===src.id), gap:target.gap}; })()""")
+        if not far.get("skip"):
+            check(far["maxgap"] > 3, f"eligible leftover days extend beyond 3 days (max {far['maxgap']})")
+            check(far["placed"], f"leftover placed on a day >3 days out ({far['gap']} days)")
+
         print("15. Export / reset / restore round-trip")
         base = ev("Store.listRecipes().length")
         exp = ev("JSON.stringify(Store.exportData())")

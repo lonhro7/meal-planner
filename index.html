@@ -68,8 +68,43 @@
     </header>
     <div class="step-wrap" id="rvBody"></div>
     <footer>
+      <button class="btn" id="rvEdit">✎ Edit</button>
       <button class="btn primary" id="rvCook">👨‍🍳 Cook step-by-step</button>
     </footer>
+  </div>
+
+  <div class="cook" id="picker">
+    <header>
+      <div class="t" id="pickerTitle">Choose</div>
+      <button class="btn small" id="pickerClose">✕</button>
+    </header>
+    <div class="picker-search" id="pickerSearchWrap"><input id="pickerSearch" type="text" placeholder="Search…" autocomplete="off"></div>
+    <div id="pickerCreate"></div>
+    <div class="step-wrap" id="pickerList" style="padding-top:8px"></div>
+  </div>
+
+  <div class="cook" id="recipeEdit">
+    <header>
+      <div class="t" id="editTitle">Edit recipe</div>
+      <button class="btn small" id="editClose">✕</button>
+    </header>
+    <div class="step-wrap">
+      <div class="row"><label class="f grow">Title<input id="e_title"></label></div>
+      <div class="row"><label class="f">Prep min<input id="e_prep" type="number" style="width:80px"></label>
+        <label class="f">Cook min<input id="e_cook" type="number" style="width:80px"></label>
+        <label class="f">Serves<input id="e_serves" type="number" style="width:70px"></label></div>
+      <div class="row"><label class="f">kJ/serve<input id="e_kj" type="number" style="width:90px"></label>
+        <label class="f">Protein g<input id="e_prot" type="number" style="width:80px"></label>
+        <label class="f">Carbs g<input id="e_carb" type="number" style="width:80px"></label>
+        <label class="f">Fat g<input id="e_fat" type="number" style="width:80px"></label></div>
+      <div class="row"><label class="f">Leftovers<select id="e_left">
+          <option value="fresh">Best fresh</option><option value="ok">OK</option><option value="excellent">Excellent</option></select></label>
+        <label class="f">Dairy<select id="e_dairy"><option value="free">Dairy-free</option><option value="replaceable">Replaceable</option><option value="required">Contains dairy</option></select></label></div>
+      <div class="row"><label class="f grow">Tags (comma)<input id="e_tags"></label></div>
+      <div class="row"><label class="f grow">Ingredients (one per line, e.g. "500 g beef mince")<textarea id="e_ings" rows="6" class="ta"></textarea></label></div>
+      <div class="row"><label class="f grow">Method (one step per line)<textarea id="e_steps" rows="6" class="ta"></textarea></label></div>
+    </div>
+    <footer><button class="btn primary" id="editSave">Save recipe</button></footer>
   </div>
 
   <div class="toast" id="toast"></div>

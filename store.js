@@ -308,6 +308,15 @@ const Store = {
       method_steps: data.method_steps || [], tags: data.tags || [], ingredients: data.ingredients || [] });
     await this.persist(); return id;
   },
+  async updateRecipe(id, data) {
+    const r = this.recipeById(id); if (!r) return;
+    ["title","servings","prep_min","cook_min","kj","protein_g","carbs_g","fat_g","leftover","dairy","weight_loss_rating"]
+      .forEach((k) => { if (data[k] !== undefined) r[k] = data[k]; });
+    if (data.tags !== undefined) r.tags = data.tags;
+    if (data.method_steps !== undefined) r.method_steps = data.method_steps;
+    if (data.ingredients !== undefined) r.ingredients = data.ingredients;
+    await this.persist();
+  },
 
   // ---------------------------------------------------------- pantry / stock
   displayName(p) { return p.is_meat ? [p.meat_type, p.meat_cut].filter(Boolean).join(" · ") : p.name; },
@@ -682,19 +691,24 @@ const Store = {
     await this.persist();
   },
   // manual "use these leftovers on…" — target must be 1–3 days after the cook
+  // Upcoming days a leftover could go on. Returns all future days in the plan
+  // (not away / not locked), each flagged `near` if within the food-safe 3-day
+  // window and `occupied` if it already holds a meal that would be replaced.
   eligibleLeftoverDays(sourceMealId) {
     const src = this.mealById(sourceMealId); if (!src || !src.recipe_id) return [];
     const out = [];
-    for (let g = 1; g <= 3; g++) {
+    for (let g = 1; g <= 14; g++) {
       const d = addDays(src.date, g); const m = this.mealByDate(d);
-      if (m && m.status !== "away" && !m.locked) out.push({ date: d, weekday: weekdayOf(d) });
+      if (!m || m.id === src.id || m.status === "away" || m.locked) continue;
+      out.push({ date: d, weekday: weekdayOf(d), gap: g, near: g <= 3,
+        occupied: (m.status === "planned" || m.status === "leftover") });
     }
     return out;
   },
   async setLeftoverPlacement(sourceMealId, targetDate) {
     const src = this.mealById(sourceMealId), tgt = this.mealByDate(targetDate);
     if (!src || !src.recipe_id || !tgt) return;
-    const gap = daysBetween(src.date, targetDate); if (gap < 1 || gap > 3) return;
+    if (daysBetween(src.date, targetDate) < 1) return;   // must fall after the cook
     tgt.status = "leftover"; tgt.recipe_id = src.recipe_id; tgt.source_meal_id = src.id;
     await this.persist();
   },

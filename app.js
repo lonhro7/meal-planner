@@ -58,6 +58,7 @@ document.querySelectorAll("nav.tabs button").forEach((b) => {
   });
 });
 function render(tab) {
+  state.tab = tab;
   if (tab === "plan") renderPlan();
   else if (tab === "shopping") renderShopping();
   else if (tab === "pantry") renderPantry();
@@ -173,7 +174,7 @@ function dayRow(m, today) {
   if (m.recipe && m.status === "planned") {
     a += `<button class="btn small" data-cook="${m.recipe.id}" data-serves="${m.servings}">👨‍🍳 Cook</button>`;
     a += `<button class="btn small" data-swap="${m.id}">Swap</button>`;
-    if (m.recipe.leftover !== "fresh") a += `<button class="btn small" data-leftover="${m.id}" title="Use leftovers on another night">♻</button>`;
+    a += `<button class="btn small" data-leftover="${m.id}" title="Add leftovers of this meal to another day">♻ Leftovers</button>`;
   }
   a += `<button class="btn small icon ${m.locked ? "on" : ""}" data-lock="${m.id}" data-locked="${m.locked}">${m.locked ? "🔒" : "🔓"}</button>`;
   a += `<button class="btn small ${m.status === "away" ? "on" : ""}" data-away="${m.date}" data-isaway="${m.status === "away"}">✈</button>`;
@@ -201,21 +202,95 @@ function wireDayActions() {
 
 async function regenerate(opts) { await Store.regenerate({ ...opts, filter: state.filter }); toast("Plan updated"); renderPlan(); }
 
-async function openSwap(mealId) {
+// ---- generic searchable picker (used for swap + leftover day selection) ----
+let pickerState = null;
+function openPicker({ title, search = true, placeholder = "Search…", items, onPick, createLabel = null, onCreate = null }) {
+  pickerState = { items, onPick, onCreate, createLabel };
+  $("pickerTitle").textContent = title;
+  $("pickerSearchWrap").style.display = search ? "" : "none";
+  const inp = $("pickerSearch"); inp.value = ""; inp.placeholder = placeholder;
+  $("picker").classList.add("open");
+  drawPicker("");
+  inp.oninput = () => drawPicker(inp.value);
+  if (search) setTimeout(() => inp.focus(), 60);
+}
+function drawPicker(q) {
+  const ql = q.trim().toLowerCase();
+  const items = pickerState.items.filter((it) => !ql || it.label.toLowerCase().includes(ql));
+  const cbox = $("pickerCreate");
+  if (pickerState.onCreate && ql && !pickerState.items.some((it) => it.label.toLowerCase() === ql)) {
+    cbox.innerHTML = `<button class="btn primary picker-create" id="pickerCreateBtn">＋ ${pickerState.createLabel || "Create"} “${q.trim()}”</button>`;
+    $("pickerCreateBtn").onclick = () => { const text = $("pickerSearch").value.trim(); closePicker(); pickerState.onCreate(text); };
+  } else cbox.innerHTML = "";
+  const list = $("pickerList");
+  if (!items.length) { list.innerHTML = `<div class="empty-note" style="padding:10px 16px">No matches.</div>`; return; }
+  list.innerHTML = items.slice(0, 250).map((it, i) =>
+    `<button class="picker-item" data-pi="${i}"><span class="pi-label">${it.label}</span>${it.sublabel ? `<span class="pi-sub">${it.sublabel}</span>` : ""}</button>`).join("");
+  list.querySelectorAll("[data-pi]").forEach((b) => b.onclick = () => { const it = items[Number(b.dataset.pi)]; closePicker(); pickerState.onPick(it); });
+}
+function closePicker() { $("picker").classList.remove("open"); }
+$("pickerClose").onclick = closePicker;
+
+function openSwap(mealId) {
   const recipes = Store.listRecipes();
-  const names = recipes.map((r, i) => `${i + 1}. ${r.title}`).join("\n");
-  const pick = prompt("Swap to which recipe? Enter the number:\n\n" + names);
-  const idx = Number(pick) - 1;
-  if (recipes[idx]) { await Store.swap(mealId, recipes[idx].id); toast("Swapped — lists updated"); renderPlan(); }
+  openPicker({
+    title: "Swap meal",
+    placeholder: "Search recipes, or type a new name…",
+    items: recipes.map((r) => ({ label: r.title, sublabel: `${r.total_min} min · ${r.kj} kJ`, id: r.id })),
+    onPick: async (it) => { await Store.swap(mealId, it.id); toast("Swapped — lists updated"); renderPlan(); },
+    createLabel: "New recipe",
+    onCreate: async (name) => {
+      const id = await Store.addRecipe({ title: name, source_name: "My recipes", leftover: "fresh", tags: [] });
+      await Store.swap(mealId, id); renderPlan();
+      toast("Created — add the details now or later");
+      openRecipeEdit(id);
+    },
+  });
 }
-async function placeLeftover(mealId) {
+function placeLeftover(mealId) {
   const days = Store.eligibleLeftoverDays(mealId);
-  if (!days.length) { toast("No free day within 3 days"); return; }
-  const list = days.map((d, i) => `${i + 1}. ${DOW_FULL[d.weekday]} ${fmtLong(d.date)}`).join("\n");
-  const pick = prompt("Use these leftovers on which night? (within 3 days)\n\n" + list);
-  const idx = Number(pick) - 1;
-  if (days[idx]) { await Store.setLeftoverPlacement(mealId, days[idx].date); toast("Leftover night set"); renderPlan(); }
+  if (!days.length) { toast("No upcoming day to place leftovers"); return; }
+  openPicker({
+    title: "Leftovers on which day?",
+    search: false,
+    items: days.map((d) => ({
+      label: `${DOW_FULL[d.weekday]} ${fmtLong(d.date)}`,
+      sublabel: (d.near ? "within 3 days" : `${d.gap} days later`) + (d.occupied ? " · replaces planned meal" : " · free night"),
+      date: d.date,
+    })),
+    onPick: async (it) => { await Store.setLeftoverPlacement(mealId, it.date); toast("Leftover night set"); renderPlan(); },
+  });
 }
+
+// ---- recipe editing (fill in ingredients/method for a recipe, incl. new ones) ----
+function ingToLine(i) { return [i.quantity != null ? trimNum(i.quantity) : "", i.unit, i.name].filter(Boolean).join(" ").trim(); }
+function openRecipeEdit(id) {
+  const r = Store.getRecipe(id); if (!r) return;
+  $("e_title").value = r.title;
+  $("e_prep").value = r.prep_min; $("e_cook").value = r.cook_min; $("e_serves").value = r.servings;
+  $("e_kj").value = r.kj; $("e_prot").value = r.protein_g; $("e_carb").value = r.carbs_g; $("e_fat").value = r.fat_g;
+  $("e_left").value = r.leftover; $("e_dairy").value = r.dairy;
+  $("e_tags").value = (r.tags || []).join(", ");
+  $("e_ings").value = (r.ingredients || []).map(ingToLine).join("\n");
+  $("e_steps").value = (r.method_steps || []).join("\n");
+  state.editing = id;
+  $("recipeEdit").classList.add("open"); $("recipeEdit").querySelector(".step-wrap").scrollTop = 0;
+}
+function closeRecipeEdit() { $("recipeEdit").classList.remove("open"); }
+$("editClose").onclick = closeRecipeEdit;
+$("editSave").onclick = async () => {
+  const id = state.editing; if (id == null) return;
+  const ings = $("e_ings").value.split("\n").map(parseIngredientLine).filter(Boolean);
+  const steps = $("e_steps").value.split("\n").map((x) => x.trim()).filter(Boolean);
+  const tags = $("e_tags").value.split(",").map((x) => x.trim()).filter(Boolean);
+  await Store.updateRecipe(id, { title: $("e_title").value.trim() || "Untitled",
+    prep_min: +$("e_prep").value || 0, cook_min: +$("e_cook").value || 0, servings: +$("e_serves").value || 4,
+    kj: +$("e_kj").value || 0, protein_g: +$("e_prot").value || 0, carbs_g: +$("e_carb").value || 0, fat_g: +$("e_fat").value || 0,
+    leftover: $("e_left").value, dairy: $("e_dairy").value, tags, ingredients: ings, method_steps: steps });
+  closeRecipeEdit(); toast("Recipe saved");
+  if ($("recipeView").classList.contains("open")) openRecipeView(id, state.viewing ? state.viewing.servings : undefined);
+  if (state.tab === "recipes") renderRecipes(); else renderPlan();
+};
 
 // ---- drag reorder (pointer-based; works for touch + mouse) ----
 function makeSortable(container, onEnd) {
@@ -633,6 +708,7 @@ function openRecipeView(recipeId, servings) {
 function closeRecipeView() { $("recipeView").classList.remove("open"); }
 $("rvClose").onclick = closeRecipeView;
 $("rvCook").onclick = () => { const v = state.viewing; closeRecipeView(); if (v) openCook(v.id, v.servings); };
+$("rvEdit").onclick = () => { const v = state.viewing; if (v) openRecipeEdit(v.id); };
 
 // Auto-fetched dish photo (TheMealDB). Best-effort: shows a spinner while it looks,
 // then the picture, a small "try another", and a "hide" control — or a quiet note
