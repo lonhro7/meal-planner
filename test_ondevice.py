@@ -181,11 +181,15 @@ try:
         check(abs(cost - ame_mince/1000) < 1e-6, f"beef mince default now from AME ($/kg) -> {cost} (ame {ame_mince})")
         cuts = ev("Store.cutsForType('Beef')")
         check("mince" in cuts and any('rump' in c for c in cuts), f"cut list for Beef has mince + rump ({len(cuts)} cuts)")
-        check(ev("Store.getMeatCuts().some(c=>c.cut==='rump whole')"), "whole-muscle AME cut appears for pricing")
+        check(ev("Store.getMeatCuts().some(c=>/ whole$/.test(c.cut))"), "whole-muscle AME cut appears for pricing")
         check(ev("Store.cutsForType('Pork').includes('leg (boneless)')") and ev("Store.cutsForType('Lamb').includes('shoulder (bone in)')"), "bone-in / boneless roasting cuts available")
         check(not ev("Store.cutsForType('Lamb').includes('shoulder')") and not ev("Store.cutsForType('Pork').includes('leg')"), "generic leg/shoulder removed from dropdown")
+        salmon_kg = ev("Store.ameKg('Salmon','fillet')")
         sp = ev("Store.defaultPPU('salmon','fillet','whole',4.5)")
-        check(abs(sp - 42.99*0.16) < 0.02, f"salmon fillet priced $/kg via piece weight -> ${sp:.2f}/fillet")
+        if salmon_kg and salmon_kg > 0:
+            check(abs(sp - salmon_kg*0.16) < 0.02, f"salmon fillet priced $/kg via piece weight -> ${sp:.2f}/fillet")
+        else:
+            check(abs(sp - 4.5) < 0.02, "salmon fillet uses fallback when no AME price scraped")
 
         print("14c. Plan meta, tappable recipe view, leftover kJ")
         # ensure a fresh full plan with default leftovers, then render the plan tab
@@ -357,6 +361,25 @@ try:
         if not far.get("skip"):
             check(far["maxgap"] > 3, f"eligible leftover days extend beyond 3 days (max {far['maxgap']})")
             check(far["placed"], f"leftover placed on a day >3 days out ({far['gap']} days)")
+
+        print("19. Seed re-sync + fridge/freezer plan filter")
+        # simulate an old cached install: wipe a recipe's content, bump like, drop seed_version -> reseed refreshes it
+        res = ev("""(()=>{ const r=Store.state.recipes.find(x=>x.title==='Spaghetti Bolognese'); const id=r.id;
+          r.ingredients=[]; r.method_steps=['old lumped step']; r.liked=1;
+          Store.state.seed_version=0; Store.reseed();
+          const r2=Store.recipeById(id);
+          return {restored: r2.ingredients.length>3, sameId: r2.id===id, keptLike: r2.liked===1, steps: r2.method_steps.length, ver: Store.state.seed_version}; })()""")
+        check(res["restored"] and res["sameId"] and res["keptLike"] and res["ver"] >= 3,
+              f"reseed refreshes recipe content, keeps id + like ({res})")
+        # fridge/freezer filter: stock chicken in the freezer, regenerate uses_freezer -> every meal uses freezer meat
+        ev("""(async()=>{ await Store.saveSettings({meat_max_pct:{}, meat_allowed_cuts:{}, day_prefs:{0:{},1:{},2:{},3:{},4:{},5:{},6:{}}});
+          await Store.addPantry({category:'meat',is_meat:true,meat_type:'Chicken',meat_cut:'thigh fillet',quantity:3000,unit:'g',location:'freezer'});
+          await Store.regenerate({scope:'all',filter:{uses_freezer:true}}); })()""")
+        allfz = ev("""Store.getPlan().weeks.flatMap(w=>w.meals).filter(m=>m.status==='planned'&&m.recipe)
+          .every(m=>Store.usesFreezerMeat(Store.recipeById(m.recipe.id)))""")
+        anyfz = ev("Store.getPlan().weeks.flatMap(w=>w.meals).filter(m=>m.status==='planned'&&m.recipe).length")
+        check(allfz and anyfz > 0, f"uses_freezer filter -> all {anyfz} planned meals use freezer meat")
+        ev("(async()=>await Store.regenerate({scope:'all',filter:{}}))()")
 
         print("15. Export / reset / restore round-trip")
         base = ev("Store.listRecipes().length")

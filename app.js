@@ -11,7 +11,7 @@ const state = {
   cook: { recipe: null, step: 0, servings: 4 },
   filter: { max_prep_min: null, max_cook_min: null, max_kj: null, max_cost: null,
     weight_loss_focus: false, high_protein: false, low_carb: false, dairy_levels: [],
-    leftover_levels: [], exclude_tags: [] },
+    uses_fridge: false, uses_freezer: false, leftover_levels: [], exclude_tags: [] },
   search: { text: "", favourited: false, uses_freezer: false, uses_fridge: false, high_protein: false,
     low_carb: false, dairy_levels: [], leftover_levels: [] },
 };
@@ -90,6 +90,11 @@ function renderPlan() {
             <button type="button" class="chip ${f.weight_loss_focus?"on":""}" data-tg="weight_loss_focus">Weight-loss</button>
             <button type="button" class="chip ${f.high_protein?"on":""}" data-tg="high_protein">High protein</button>
             <button type="button" class="chip ${f.low_carb?"on":""}" data-tg="low_carb">Low carb</button>
+          </div></div>
+        <div class="fl"><span class="fl-label">Use up stock</span>
+          <div class="chips">
+            <button type="button" class="chip ${f.uses_fridge?"on":""}" data-tg="uses_fridge">🧊 Uses fridge meat</button>
+            <button type="button" class="chip ${f.uses_freezer?"on":""}" data-tg="uses_freezer">❄️ Uses freezer meat</button>
           </div></div>
         <div class="fl"><span class="fl-label">Dairy (pick any)</span><div class="chips">
           ${DAIRY_LEVELS.map(([k,l]) => `<button type="button" class="chip ${f.dairy_levels.includes(k)?"on":""}" data-dl="${k}">${l}</button>`).join("")}</div></div>

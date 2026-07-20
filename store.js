@@ -22,6 +22,9 @@ const LEFTOVER_LABELS = { fresh: "Best fresh", ok: "OK leftovers", excellent: "E
 const DAY_PREF_OPTIONS = [["quick","Quick and easy"],["slowcook","Early prep / slow cook"],["long","Long cook"],["light","Light"],["leftover","Leftover night"],["nocook","No cook"]];
 // True when a row is green (allowed) for a day. Absent = default: green for all rows, red for "nocook".
 function dayGreen(dp, key) { const v = (dp || {})[key]; if (v === undefined) return key !== "nocook"; return !!v; }
+// Bump when the built-in recipe library (seed.js) content changes so existing
+// installs refresh their seed recipes instead of keeping the old cached copies.
+const SEED_VERSION = 3;
 const AVG_SAUSAGE_KG = 0.1;  // assumed weight per sausage, for $/kg pricing of sausages
 // approx weight per piece (kg) for cuts counted "whole" in recipes, so they can be priced $/kg
 const PIECE_KG = {
@@ -184,6 +187,28 @@ const Store = {
       if (p.purchase_date === undefined) p.purchase_date = "";
       if (p.best_before === undefined) p.best_before = "";
     });
+    this.reseed();
+  },
+  // Refresh built-in recipes from the current seed when its version increases.
+  // Matches by title so recipe ids stay stable (the plan references them); keeps
+  // each recipe's like/cook counts, and leaves the user's own recipes untouched.
+  reseed() {
+    if ((this.state.seed_version || 0) >= SEED_VERSION) return;
+    const byTitle = {};
+    this.state.recipes.forEach((r) => { byTitle[r.title] = r; });
+    SEED_RECIPES.forEach((sr) => {
+      const ex = byTitle[sr.title];
+      if (ex && ex.user_edited) {
+        // leave user-edited recipes exactly as they are
+      } else if (ex) {
+        const id = ex.id, liked = ex.liked || 0, times = ex.times_cooked || 0;
+        Object.keys(ex).forEach((k) => delete ex[k]);
+        Object.assign(ex, clone(sr), { id, liked, times_cooked: times });
+      } else {
+        this.state.recipes.push({ id: this.state.seq.recipe++, liked: 0, times_cooked: 0, ...clone(sr) });
+      }
+    });
+    this.state.seed_version = SEED_VERSION;
   },
   DAY_PREF_OPTIONS,
   freezerMonths,
@@ -192,7 +217,7 @@ const Store = {
     const recipes = SEED_RECIPES.map((r, i) => ({ id: i + 1, liked: 0, times_cooked: 0, ...clone(r) }));
     const start = mostRecentWeekStart(todayISO(), 0);
     return {
-      schema: 2, recipes, pantry: [],
+      schema: 2, seed_version: SEED_VERSION, recipes, pantry: [],
       plan: { start_date: start, weeks: 4 }, meals: [],
       settings: {
         household_adults: 2, household_children: 2, servings_per_meal: 4,
@@ -310,6 +335,7 @@ const Store = {
   },
   async updateRecipe(id, data) {
     const r = this.recipeById(id); if (!r) return;
+    r.user_edited = true;   // protect the user's changes from future seed re-syncs
     ["title","servings","prep_min","cook_min","kj","protein_g","carbs_g","fat_g","leftover","dairy","weight_loss_rating"]
       .forEach((k) => { if (data[k] !== undefined) r[k] = data[k]; });
     if (data.tags !== undefined) r.tags = data.tags;
@@ -479,6 +505,8 @@ const Store = {
     const lc = this.state.settings.low_carb_g ?? LOW_CARB_G;
     if (f.high_protein && (r.protein_g || 0) < hp) return false;
     if (f.low_carb && (r.carbs_g || 0) > lc) return false;
+    if (f.uses_fridge && !this.usesFridgeMeat(r)) return false;
+    if (f.uses_freezer && !this.usesFreezerMeat(r)) return false;
     if (f.kid_friendly_only && !r.kid_friendly) return false;
     // dairy_levels: multi-select of "free" / "replaceable"; empty = any
     if ((f.dairy_levels || []).length && !f.dairy_levels.includes(r.dairy || "required")) return false;
