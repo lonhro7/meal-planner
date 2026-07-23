@@ -1,5 +1,5 @@
 {
-  "updated": "2026-07-21",
+  "updated": "2026-07-23",
   "source": "Australian Meat Emporium (meatemporium.com.au)",
   "note": "AUD $/kg, auto-scraped Mon/Wed/Fri. Cheapest listing per cut.",
   "kg_prices": {
@@ -18,7 +18,7 @@
     "beef|rump": 16.89,
     "beef|rump steak": 24.79,
     "beef|scotch fillet": 32.4,
-    "beef|short ribs": 62.98,
+    "beef|short ribs": 57.48,
     "beef|skirt": 41.98,
     "beef|steak": 23.09,
     "beef|stir-fry strips": 12.64,
