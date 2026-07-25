@@ -212,6 +212,8 @@ async function regenerate(opts) { await Store.regenerate({ ...opts, filter: stat
 // plus `filterChips` (rendered above the list) and a mutable `filterState`.
 let pickerState = null;
 const SWAP_FILTERS = [
+  { label: "Cook time", type: "radio", key: "cooktime", options: [["le20","≤20 min"],["le30","≤30 min"],["le45","≤45 min"],["gt45","45+ min"]] },
+  { label: "Meal type", type: "multi", key: "mealtype", options: [["slow-cook","Slow cook"],["curry","Curry"],["stir-fry","Stir-fry"],["pasta","Pasta"],["mexican","Mexican"],["oven","Oven bake"],["light","Light"]] },
   { label: "Leftovers", type: "multi", key: "leftover_levels", options: [["fresh","Best fresh"],["ok","OK"],["excellent","Excellent"]] },
   { label: "Dietary", type: "bool", options: [["high_protein","High protein"],["low_carb","Low carb"]] },
   { label: "Dairy", type: "multi", key: "dairy_levels", options: [["free","Dairy-free"],["replaceable","Replaceable"]] },
@@ -234,18 +236,22 @@ function renderPickerFilters() {
   if (!pickerState.filterChips) { box.innerHTML = ""; return; }
   box.innerHTML = pickerState.filterChips.map((g) => {
     const chips = g.options.map(([val, lbl]) => {
-      const on = g.type === "multi" ? (fs[g.key] || []).includes(val) : !!fs[val];
-      const attr = g.type === "multi" ? `data-pfm="${g.key}" data-pfv="${val}"` : `data-pfb="${val}"`;
+      const on = g.type === "multi" ? (fs[g.key] || []).includes(val) : g.type === "radio" ? fs[g.key] === val : !!fs[val];
+      const attr = g.type === "multi" ? `data-pfm="${g.key}" data-pfv="${val}"`
+        : g.type === "radio" ? `data-pfr="${g.key}" data-pfv="${val}"` : `data-pfb="${val}"`;
       return `<button type="button" class="chip ${on ? "on" : ""}" ${attr}>${lbl}</button>`;
     }).join("");
     return `<div class="pf-group"><span class="pf-label">${g.label}</span><div class="chips">${chips}</div></div>`;
   }).join("");
-  const redraw = (b) => { b.classList.toggle("on"); drawPicker($("pickerSearch").value); };
+  const redraw = () => { renderPickerFilters(); drawPicker($("pickerSearch").value); };
   box.querySelectorAll("[data-pfm]").forEach((b) => b.onclick = () => {
     const arr = fs[b.dataset.pfm] || (fs[b.dataset.pfm] = []); const i = arr.indexOf(b.dataset.pfv);
-    if (i >= 0) arr.splice(i, 1); else arr.push(b.dataset.pfv); redraw(b);
+    if (i >= 0) arr.splice(i, 1); else arr.push(b.dataset.pfv); b.classList.toggle("on"); drawPicker($("pickerSearch").value);
   });
-  box.querySelectorAll("[data-pfb]").forEach((b) => b.onclick = () => { fs[b.dataset.pfb] = !fs[b.dataset.pfb]; redraw(b); });
+  box.querySelectorAll("[data-pfr]").forEach((b) => b.onclick = () => {
+    const key = b.dataset.pfr, val = b.dataset.pfv; fs[key] = fs[key] === val ? null : val; redraw();
+  });
+  box.querySelectorAll("[data-pfb]").forEach((b) => b.onclick = () => { fs[b.dataset.pfb] = !fs[b.dataset.pfb]; b.classList.toggle("on"); drawPicker($("pickerSearch").value); });
 }
 function drawPicker(q) {
   const ql = q.trim().toLowerCase();
@@ -273,11 +279,20 @@ function openSwap(mealId) {
     filterChips: SWAP_FILTERS,
     filterState: {},
     existsLabel: (t) => Store.listRecipes().some((r) => r.title.toLowerCase() === t),
-    getItems: (q, fs) => Store.searchRecipes({ text: q, favourited: fs.favourited, uses_fridge: fs.uses_fridge,
-      uses_freezer: fs.uses_freezer, high_protein: fs.high_protein, low_carb: fs.low_carb,
-      dairy_levels: fs.dairy_levels || [], leftover_levels: fs.leftover_levels || [] })
-      .sort((a, b) => a.title.localeCompare(b.title))
-      .map((r) => ({ label: r.title, sublabel: `${r.total_min} min · ${r.kj} kJ${r.leftover_label ? " · " + r.leftover_label : ""}`, id: r.id })),
+    getItems: (q, fs) => {
+      const styles = fs.mealtype || [], tagStyles = styles.filter((s) => s !== "light");
+      const opts = { text: q, favourited: fs.favourited, uses_fridge: fs.uses_fridge, uses_freezer: fs.uses_freezer,
+        high_protein: fs.high_protein, low_carb: fs.low_carb, dairy_levels: fs.dairy_levels || [],
+        leftover_levels: fs.leftover_levels || [], weight_loss_focus: styles.includes("light") };
+      if (fs.cooktime === "le20") opts.max_cook_min = 20;
+      else if (fs.cooktime === "le30") opts.max_cook_min = 30;
+      else if (fs.cooktime === "le45") opts.max_cook_min = 45;
+      else if (fs.cooktime === "gt45") opts.min_cook_min = 45;
+      let res = Store.searchRecipes(opts);
+      if (tagStyles.length) res = res.filter((r) => (r.tags || []).some((t) => tagStyles.includes(t)));   // any selected meal type
+      return res.sort((a, b) => a.title.localeCompare(b.title))
+        .map((r) => ({ label: r.title, sublabel: `${r.total_min} min · ${r.kj} kJ${r.leftover_label ? " · " + r.leftover_label : ""}`, id: r.id }));
+    },
     onPick: async (it) => { await Store.swap(mealId, it.id); toast("Swapped — lists updated"); renderPlan(); },
     createLabel: "New recipe",
     onCreate: async (name) => {

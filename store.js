@@ -309,6 +309,7 @@ const Store = {
     const terms = (opts.text || "").toLowerCase().split(/[,\n]/).map((s) => s.trim()).filter(Boolean);
     const f = { high_protein: opts.high_protein, low_carb: opts.low_carb, dairy_levels: opts.dairy_levels || [],
       leftover_levels: opts.leftover_levels || [], include_tags: opts.tags || [], exclude_tags: opts.exclude_tags || [],
+      weight_loss_focus: opts.weight_loss_focus, min_cook_min: opts.min_cook_min,
       max_prep_min: opts.max_prep_min, max_cook_min: opts.max_cook_min };
     let out = this.state.recipes.filter((r) => {
       if (opts.favourited && (r.liked || 0) !== 1) return false;

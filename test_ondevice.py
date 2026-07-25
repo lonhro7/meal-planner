@@ -398,6 +398,19 @@ try:
           return t.every(x=>{const r=Store.state.recipes.find(y=>y.title===x); return r && r.protein_g>=30 && r.leftover==='excellent';}); })()""")
         check(both_ok, "adding 'excellent' leftovers filter further narrows the list")
         pg.eval_on_selector("#pickerClose", "el=>el.click()")
+        # cook-time + meal-type (slow cook) filters
+        ev("(()=>{ const m=Store.state.meals.find(x=>x.status==='planned'); openSwap(m.id); })()")
+        pg.wait_for_selector("#picker.open")
+        pg.eval_on_selector('[data-pfr="cooktime"][data-pfv="le30"]', "el=>el.click()")
+        ct_ok = ev("""(()=>{ const t=[...document.querySelectorAll('#pickerList .pi-label')].map(e=>e.textContent);
+          return t.length>0 && t.every(x=>{const r=Store.state.recipes.find(y=>y.title===x); return r && r.cook_min<=30;}); })()""")
+        check(ct_ok, "cook-time filter narrows swap list to <=30 min")
+        pg.eval_on_selector('[data-pfr="cooktime"][data-pfv="le30"]', "el=>el.click()")   # clear
+        pg.eval_on_selector('[data-pfm="mealtype"][data-pfv="slow-cook"]', "el=>el.click()")
+        sc_ok = ev("""(()=>{ const t=[...document.querySelectorAll('#pickerList .pi-label')].map(e=>e.textContent);
+          return t.length>0 && t.every(x=>{const r=Store.state.recipes.find(y=>y.title===x); return r && (r.tags||[]).includes('slow-cook');}); })()""")
+        check(sc_ok, "meal-type 'slow cook' filter narrows to slow-cook recipes")
+        pg.eval_on_selector("#pickerClose", "el=>el.click()")
 
         print("15. Export / reset / restore round-trip")
         base = ev("Store.listRecipes().length")
