@@ -64,7 +64,13 @@
   <div class="cook" id="recipeView">
     <header>
       <div class="t" id="rvTitle">Recipe</div>
-      <button class="btn small" id="rvClose">✕</button>
+      <div class="serves">
+        <span class="small muted">Serves</span>
+        <button class="btn small" id="rvServesDown">−</button>
+        <span id="rvServesVal">4</span>
+        <button class="btn small" id="rvServesUp">+</button>
+        <button class="btn small" id="rvClose">✕</button>
+      </div>
     </header>
     <div class="step-wrap" id="rvBody"></div>
     <footer>

@@ -174,6 +174,8 @@ input:focus, select:focus { outline: none; border-color: var(--accent); }
 /* read-only recipe view */
 .rv-summary { color: var(--muted); font-size: 14px; margin-bottom: 6px; }
 .rv-h { margin: 20px 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--accent); }
+.rv-sec { font-weight: 600; font-size: 14px; margin: 12px 0 4px; color: var(--text); }
+.rv-sec:first-child { margin-top: 0; }
 .rv-ings { margin: 0; padding-left: 20px; }
 .rv-ings li { padding: 4px 0; line-height: 1.4; }
 .rv-steps { list-style: none; margin: 0; padding: 0; }

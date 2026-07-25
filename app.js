@@ -739,29 +739,43 @@ function renderSettings() {
 // Read-only full recipe: ingredients (scaled to servings) + numbered method.
 function openRecipeView(recipeId, servings) {
   const r = Store.getRecipe(recipeId); if (!r) return;
-  const serves = servings || r.servings;
-  state.viewing = { id: recipeId, servings: serves };
-  const scale = serves / Math.max(r.servings, 1);
+  // Default to the recipe's own yield so quantities match the source (e.g. RecipeTinEats);
+  // the Serves stepper rescales for your household.
+  state.viewing = { id: recipeId, servings: r.servings || servings || 4 };
   $("rvTitle").textContent = r.title;
   const macros = `${r.kj} kJ · ${r.protein_g} g protein · ${r.carbs_g} g carbs · ${r.fat_g} g fat`;
-  const ings = (r.ingredients || []).slice().sort((a, b) => (a.step_index || 0) - (b.step_index || 0));
-  const ingHtml = ings.length
-    ? ings.map((x) => `<li>${ingQty(x, scale)} ${x.name}${x.optional ? " (optional)" : ""}</li>`).join("")
-    : `<li class="muted">No ingredients recorded.</li>`;
   const steps = r.method_steps && r.method_steps.length ? r.method_steps : ["No method steps recorded."];
   const stepHtml = steps.map((s, i) => `<li><span class="rv-stepn">${i + 1}</span><span>${s}</span></li>`).join("");
   $("rvBody").innerHTML =
     `<div class="rv-photo" id="rvPhoto"></div>
-     <div class="rv-summary">${r.total_min} min (prep ${r.prep_min} + cook ${r.cook_min}) · serves ${serves}</div>
+     <div class="rv-summary">${r.total_min} min (prep ${r.prep_min} + cook ${r.cook_min})</div>
      <div class="rv-summary">${macros} · per serve</div>
      ${r.leftover_label ? `<div class="rv-summary">Leftovers: ${r.leftover_label}</div>` : ""}
      ${r.source_url ? `<div class="rv-summary">Source: <a href="${r.source_url}" target="_blank" rel="noopener">${r.source_name || "recipe"}</a></div>` : ""}
-     <h4 class="rv-h">Ingredients</h4><ul class="rv-ings">${ingHtml}</ul>
+     <h4 class="rv-h">Ingredients</h4><div id="rvIngredients"></div>
      <h4 class="rv-h">Method</h4><ol class="rv-steps">${stepHtml}</ol>`;
+  renderRvIngredients();
   $("recipeView").classList.add("open");
   $("rvBody").scrollTop = 0;
   loadRecipePhoto(recipeId);
 }
+// Ingredients grouped by dish part (section), scaled to the chosen serves. Recipes
+// without sections fall back to a single flat list.
+function renderRvIngredients() {
+  const v = state.viewing; if (!v) return; const r = Store.getRecipe(v.id); if (!r) return;
+  $("rvServesVal").textContent = v.servings;
+  const scale = v.servings / Math.max(r.servings, 1);
+  const order = [], groups = {};
+  (r.ingredients || []).forEach((x) => { const sec = x.section || ""; if (!(sec in groups)) { groups[sec] = []; order.push(sec); } groups[sec].push(x); });
+  const html = order.map((sec) => {
+    const lis = groups[sec].map((x) => `<li>${ingQty(x, scale)} ${x.name}${x.optional ? " (optional)" : ""}</li>`).join("");
+    return (sec ? `<div class="rv-sec">${sec}</div>` : "") + `<ul class="rv-ings">${lis}</ul>`;
+  }).join("") || `<div class="muted">No ingredients recorded.</div>`;
+  $("rvIngredients").innerHTML = html;
+}
+function rvSetServes(delta) { const v = state.viewing; if (!v) return; v.servings = Math.max(1, v.servings + delta); renderRvIngredients(); }
+$("rvServesUp").onclick = () => rvSetServes(1);
+$("rvServesDown").onclick = () => rvSetServes(-1);
 function closeRecipeView() { $("recipeView").classList.remove("open"); }
 $("rvClose").onclick = closeRecipeView;
 $("rvCook").onclick = () => { const v = state.viewing; closeRecipeView(); if (v) openCook(v.id, v.servings); };
