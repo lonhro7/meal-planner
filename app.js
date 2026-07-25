@@ -208,22 +208,52 @@ function wireDayActions() {
 async function regenerate(opts) { await Store.regenerate({ ...opts, filter: state.filter }); toast("Plan updated"); renderPlan(); }
 
 // ---- generic searchable picker (used for swap + leftover day selection) ----
+// Static lists pass `items`; dynamic/filtered lists pass `getItems(query, filterState)`
+// plus `filterChips` (rendered above the list) and a mutable `filterState`.
 let pickerState = null;
-function openPicker({ title, search = true, placeholder = "Search…", items, onPick, createLabel = null, onCreate = null }) {
-  pickerState = { items, onPick, onCreate, createLabel };
+const SWAP_FILTERS = [
+  { label: "Leftovers", type: "multi", key: "leftover_levels", options: [["fresh","Best fresh"],["ok","OK"],["excellent","Excellent"]] },
+  { label: "Dietary", type: "bool", options: [["high_protein","High protein"],["low_carb","Low carb"]] },
+  { label: "Dairy", type: "multi", key: "dairy_levels", options: [["free","Dairy-free"],["replaceable","Replaceable"]] },
+  { label: "Use up stock", type: "bool", options: [["uses_fridge","🧊 Fridge meat"],["uses_freezer","❄️ Freezer meat"]] },
+  { label: "Other", type: "bool", options: [["favourited","⭐ Favourites"]] },
+];
+function openPicker({ title, search = true, placeholder = "Search…", items = null, getItems = null, filterChips = null, filterState = null, existsLabel = null, onPick, createLabel = null, onCreate = null }) {
+  pickerState = { items, getItems, filterChips, filterState: filterState || {}, existsLabel, onPick, onCreate, createLabel };
   $("pickerTitle").textContent = title;
   $("pickerSearchWrap").style.display = search ? "" : "none";
   const inp = $("pickerSearch"); inp.value = ""; inp.placeholder = placeholder;
+  renderPickerFilters();
   $("picker").classList.add("open");
   drawPicker("");
   inp.oninput = () => drawPicker(inp.value);
   if (search) setTimeout(() => inp.focus(), 60);
 }
+function renderPickerFilters() {
+  const box = $("pickerFilters"), fs = pickerState.filterState;
+  if (!pickerState.filterChips) { box.innerHTML = ""; return; }
+  box.innerHTML = pickerState.filterChips.map((g) => {
+    const chips = g.options.map(([val, lbl]) => {
+      const on = g.type === "multi" ? (fs[g.key] || []).includes(val) : !!fs[val];
+      const attr = g.type === "multi" ? `data-pfm="${g.key}" data-pfv="${val}"` : `data-pfb="${val}"`;
+      return `<button type="button" class="chip ${on ? "on" : ""}" ${attr}>${lbl}</button>`;
+    }).join("");
+    return `<div class="pf-group"><span class="pf-label">${g.label}</span><div class="chips">${chips}</div></div>`;
+  }).join("");
+  const redraw = (b) => { b.classList.toggle("on"); drawPicker($("pickerSearch").value); };
+  box.querySelectorAll("[data-pfm]").forEach((b) => b.onclick = () => {
+    const arr = fs[b.dataset.pfm] || (fs[b.dataset.pfm] = []); const i = arr.indexOf(b.dataset.pfv);
+    if (i >= 0) arr.splice(i, 1); else arr.push(b.dataset.pfv); redraw(b);
+  });
+  box.querySelectorAll("[data-pfb]").forEach((b) => b.onclick = () => { fs[b.dataset.pfb] = !fs[b.dataset.pfb]; redraw(b); });
+}
 function drawPicker(q) {
   const ql = q.trim().toLowerCase();
-  const items = pickerState.items.filter((it) => !ql || it.label.toLowerCase().includes(ql));
+  const items = pickerState.getItems ? pickerState.getItems(q, pickerState.filterState)
+    : pickerState.items.filter((it) => !ql || it.label.toLowerCase().includes(ql));
   const cbox = $("pickerCreate");
-  if (pickerState.onCreate && ql && !pickerState.items.some((it) => it.label.toLowerCase() === ql)) {
+  const exists = ql && (pickerState.existsLabel ? pickerState.existsLabel(ql) : pickerState.items && pickerState.items.some((it) => it.label.toLowerCase() === ql));
+  if (pickerState.onCreate && ql && !exists) {
     cbox.innerHTML = `<button class="btn primary picker-create" id="pickerCreateBtn">＋ ${pickerState.createLabel || "Create"} “${q.trim()}”</button>`;
     $("pickerCreateBtn").onclick = () => { const text = $("pickerSearch").value.trim(); closePicker(); pickerState.onCreate(text); };
   } else cbox.innerHTML = "";
@@ -237,11 +267,17 @@ function closePicker() { $("picker").classList.remove("open"); }
 $("pickerClose").onclick = closePicker;
 
 function openSwap(mealId) {
-  const recipes = Store.listRecipes();
   openPicker({
     title: "Swap meal",
     placeholder: "Search recipes, or type a new name…",
-    items: recipes.map((r) => ({ label: r.title, sublabel: `${r.total_min} min · ${r.kj} kJ`, id: r.id })),
+    filterChips: SWAP_FILTERS,
+    filterState: {},
+    existsLabel: (t) => Store.listRecipes().some((r) => r.title.toLowerCase() === t),
+    getItems: (q, fs) => Store.searchRecipes({ text: q, favourited: fs.favourited, uses_fridge: fs.uses_fridge,
+      uses_freezer: fs.uses_freezer, high_protein: fs.high_protein, low_carb: fs.low_carb,
+      dairy_levels: fs.dairy_levels || [], leftover_levels: fs.leftover_levels || [] })
+      .sort((a, b) => a.title.localeCompare(b.title))
+      .map((r) => ({ label: r.title, sublabel: `${r.total_min} min · ${r.kj} kJ${r.leftover_label ? " · " + r.leftover_label : ""}`, id: r.id })),
     onPick: async (it) => { await Store.swap(mealId, it.id); toast("Swapped — lists updated"); renderPlan(); },
     createLabel: "New recipe",
     onCreate: async (name) => {

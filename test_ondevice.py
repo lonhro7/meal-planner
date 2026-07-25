@@ -383,6 +383,22 @@ try:
         check(allfz and anyfz > 0, f"uses_freezer filter -> all {anyfz} planned meals use freezer meat")
         ev("(async()=>await Store.regenerate({scope:'all',filter:{}}))()")
 
+        print("20. Swap picker filters narrow the recipe list")
+        ev("(async()=>{ await Store.saveSettings({high_protein_g:30}); await Store.regenerate({scope:'all',filter:{}}); })()")
+        ev("render('plan')"); pg.wait_for_selector("#tab-plan .day")
+        ev("(()=>{ const m=Store.state.meals.find(x=>x.status==='planned'); openSwap(m.id); })()")
+        pg.wait_for_selector("#picker.open")
+        check(ev("document.querySelectorAll('#pickerFilters .chip').length") >= 8, "swap picker shows filter chips")
+        pg.eval_on_selector('[data-pfb="high_protein"]', "el=>el.click()")
+        hp_ok = ev("""(()=>{ const t=[...document.querySelectorAll('#pickerList .pi-label')].map(e=>e.textContent);
+          return t.length>0 && t.every(x=>{const r=Store.state.recipes.find(y=>y.title===x); return r && r.protein_g>=30;}); })()""")
+        check(hp_ok, "high-protein filter narrows swap list to >=30g protein")
+        pg.eval_on_selector('[data-pfm="leftover_levels"][data-pfv="excellent"]', "el=>el.click()")
+        both_ok = ev("""(()=>{ const t=[...document.querySelectorAll('#pickerList .pi-label')].map(e=>e.textContent);
+          return t.every(x=>{const r=Store.state.recipes.find(y=>y.title===x); return r && r.protein_g>=30 && r.leftover==='excellent';}); })()""")
+        check(both_ok, "adding 'excellent' leftovers filter further narrows the list")
+        pg.eval_on_selector("#pickerClose", "el=>el.click()")
+
         print("15. Export / reset / restore round-trip")
         base = ev("Store.listRecipes().length")
         exp = ev("JSON.stringify(Store.exportData())")
