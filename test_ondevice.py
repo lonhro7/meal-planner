@@ -412,6 +412,20 @@ try:
         check(sc_ok, "meal-type 'slow cook' filter narrows to slow-cook recipes")
         pg.eval_on_selector("#pickerClose", "el=>el.click()")
 
+        print("21. RTE recipes: native servings + ingredient sections")
+        binfo = ev("""(()=>{ const r=Store.state.recipes.find(x=>x.title.includes('Biryani'));
+          openRecipeView(r.id);
+          const secs=[...document.querySelectorAll('#rvIngredients .rv-sec')].map(e=>e.textContent);
+          const serves=+document.getElementById('rvServesVal').textContent;
+          const first=document.querySelector('#rvIngredients li').textContent;
+          const zero=[...document.querySelectorAll('#rvIngredients li')].some(li=>/^0\\s/.test(li.textContent.trim()));
+          document.querySelector('#rvClose').click();
+          return {secs, serves, first, zero, native:r.servings}; })()""")
+        check(binfo["serves"] == binfo["native"] and binfo["serves"] >= 6, f"recipe view opens at native servings ({binfo['serves']})")
+        check(len(binfo["secs"]) >= 3, f"ingredients grouped into dish-part sections ({binfo['secs']})")
+        check("750" in binfo["first"], f"quantities match source at native servings ({binfo['first']!r})")
+        check(not binfo["zero"], "no '0 unit' shown for no-quantity garnish items")
+
         print("15. Export / reset / restore round-trip")
         base = ev("Store.listRecipes().length")
         exp = ev("JSON.stringify(Store.exportData())")

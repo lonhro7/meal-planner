@@ -24,7 +24,7 @@ const DAY_PREF_OPTIONS = [["quick","Quick and easy"],["slowcook","Early prep / s
 function dayGreen(dp, key) { const v = (dp || {})[key]; if (v === undefined) return key !== "nocook"; return !!v; }
 // Bump when the built-in recipe library (seed.js) content changes so existing
 // installs refresh their seed recipes instead of keeping the old cached copies.
-const SEED_VERSION = 4;
+const SEED_VERSION = 5;
 const AVG_SAUSAGE_KG = 0.1;  // assumed weight per sausage, for $/kg pricing of sausages
 // approx weight per piece (kg) for cuts counted "whole" in recipes, so they can be priced $/kg
 const PIECE_KG = {

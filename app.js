@@ -39,6 +39,7 @@ function canSize(name) {
 }
 // full ingredient quantity label: kg/L smart, and cans shown with their standard size
 function ingQty(x, scale) {
+  if (!(x.quantity > 0)) return "";   // garnish / "to taste" items carry no quantity
   const q = (x.quantity || 0) * (scale || 1), unit = x.unit;
   if (unit === "can" || unit === "tin") {
     const n = Math.round(q * 10) / 10, v = Number.isInteger(n) ? n : n.toFixed(1);
@@ -768,7 +769,7 @@ function renderRvIngredients() {
   const order = [], groups = {};
   (r.ingredients || []).forEach((x) => { const sec = x.section || ""; if (!(sec in groups)) { groups[sec] = []; order.push(sec); } groups[sec].push(x); });
   const html = order.map((sec) => {
-    const lis = groups[sec].map((x) => `<li>${ingQty(x, scale)} ${x.name}${x.optional ? " (optional)" : ""}</li>`).join("");
+    const lis = groups[sec].map((x) => `<li>${[ingQty(x, scale), x.name].filter(Boolean).join(" ")}${x.optional ? " (optional)" : ""}</li>`).join("");
     return (sec ? `<div class="rv-sec">${sec}</div>` : "") + `<ul class="rv-ings">${lis}</ul>`;
   }).join("") || `<div class="muted">No ingredients recorded.</div>`;
   $("rvIngredients").innerHTML = html;
@@ -832,7 +833,7 @@ function drawCook() {
   const i = Math.max(0, Math.min(step, steps.length - 1));
   $("stepNum").textContent = `Step ${i + 1} of ${steps.length}`; $("stepText").textContent = steps[i];
   const ings = recipe.ingredients.filter((x) => x.step_index === i);
-  $("stepIngs").innerHTML = ings.length ? ings.map((x) => `<div>• ${ingQty(x, scale)} ${x.name}${x.optional ? " (optional)" : ""}</div>`).join("") : `<div class="muted">— use ingredients as needed —</div>`;
+  $("stepIngs").innerHTML = ings.length ? ings.map((x) => `<div>• ${[ingQty(x, scale), x.name].filter(Boolean).join(" ")}${x.optional ? " (optional)" : ""}</div>`).join("") : `<div class="muted">— use ingredients as needed —</div>`;
   $("prevStep").disabled = i === 0; $("nextStep").textContent = i === steps.length - 1 ? "Done ✓" : "Next ▶";
 }
 $("nextStep").onclick = () => { const steps = state.cook.recipe.method_steps.length || 1; if (state.cook.step >= steps - 1) closeCook(); else { state.cook.step++; drawCook(); } };
