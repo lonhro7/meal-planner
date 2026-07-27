@@ -425,6 +425,8 @@ try:
         check(len(binfo["secs"]) >= 3, f"ingredients grouped into dish-part sections ({binfo['secs']})")
         check("750" in binfo["first"], f"quantities match source at native servings ({binfo['first']!r})")
         check(not binfo["zero"], "no '0 unit' shown for no-quantity garnish items")
+        check(ev("fracStr(0.125)")=="1/8" and ev("fracStr(0.25)")=="1/4" and ev("fracStr(0.5)")=="1/2" and ev("fracStr(1.75)")=="1 3/4", "fractional quantities render as fractions")
+        check(ev("ingQty({quantity:0.125,unit:'tsp',name:'x'},1)")=="1/8 tsp" and ev("ingQty({quantity:0.5,unit:'tsp',name:'x'},1)")=="1/2 tsp", "tsp/tbsp quantities show as fractions not decimals")
 
         print("15. Export / reset / restore round-trip")
         base = ev("Store.listRecipes().length")

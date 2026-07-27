@@ -21,6 +21,20 @@ function fmtDate(iso) { const d = new Date(iso + "T00:00:00"); return { dow: DOW
 function fmtLong(iso) { const f = fmtDate(iso); return `${f.dow} ${f.d} ${f.m}`; }
 function qtyLabel(q, unit) { const n = Math.round(q * 10) / 10; const v = Number.isInteger(n) ? n : n.toFixed(1); return unit ? `${v} ${unit}` : `${v}`; }
 function trimNum(n) { return String(Math.round(n * 100) / 100); }
+// Show cooking-spoon/cup/whole quantities as proper fractions (¼, ½, 1 ½) rather
+// than decimals. Snaps to common fractions within a small tolerance, else decimal.
+const FRAC_UNITS = new Set(["tsp", "tbsp", "cup", "whole", "clove"]);
+const NICE_FRACS = [[1/8,"1/8"],[1/4,"1/4"],[1/3,"1/3"],[3/8,"3/8"],[1/2,"1/2"],[5/8,"5/8"],[2/3,"2/3"],[3/4,"3/4"],[7/8,"7/8"]];
+function fracStr(q) {
+  if (q <= 0) return "0";
+  const whole = Math.floor(q + 1e-6), frac = q - whole;
+  if (frac < 0.045) return String(whole);
+  if (frac > 0.955) return String(whole + 1);
+  let best = null, bestd = 0.045;
+  for (const [v, s] of NICE_FRACS) { const d = Math.abs(frac - v); if (d <= bestd) { bestd = d; best = s; } }
+  if (!best) return trimNum(q);                       // not near a common fraction → decimal
+  return whole === 0 ? best : `${whole} ${best}`;
+}
 // convert to kg / L once past 1000 g / ml (e.g. 1500 g -> "1.5 kg", 2250 g -> "2.25 kg")
 function qtyLabelSmart(q, unit) {
   if (unit === "g" && q >= 1000) return `${trimNum(q / 1000)} kg`;
@@ -46,6 +60,7 @@ function ingQty(x, scale) {
     const word = n > 1 ? unit + "s" : unit;
     return `${v} × ${canSize(x.name)} ${word}`;
   }
+  if (FRAC_UNITS.has(unit)) return `${fracStr(q)} ${unit}`;
   return qtyLabelSmart(q, unit);
 }
 
