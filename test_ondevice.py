@@ -428,6 +428,13 @@ try:
         check(ev("fracStr(0.125)")=="1/8" and ev("fracStr(0.25)")=="1/4" and ev("fracStr(0.5)")=="1/2" and ev("fracStr(1.75)")=="1 3/4", "fractional quantities render as fractions")
         check(ev("ingQty({quantity:0.125,unit:'tsp',name:'x'},1)")=="1/8 tsp" and ev("ingQty({quantity:0.5,unit:'tsp',name:'x'},1)")=="1/2 tsp", "tsp/tbsp quantities show as fractions not decimals")
 
+        print("22. Plan greys out past days")
+        ev("render('plan')"); pg.wait_for_selector("#tab-plan .day")
+        today = ev("Store.getPlan().today")
+        pastok = ev(f"""[...document.querySelectorAll('#tab-plan .day')].every(d=>{{ const dt=d.dataset.date; if(!dt) return true;
+          return d.classList.contains('past') === (dt < '{today}'); }})""")
+        check(pastok, "days before today carry the 'past' (greyed) class; today/future do not")
+
         print("15. Export / reset / restore round-trip")
         base = ev("Store.listRecipes().length")
         exp = ev("JSON.stringify(Store.exportData())")

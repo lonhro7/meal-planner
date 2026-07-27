@@ -54,6 +54,8 @@ nav.tabs button.active { color: var(--accent); }
 .day:last-child { border-bottom: none; }
 .day.today { background: rgba(76,175,125,.08); border-radius: 10px;
   margin: 0 -8px; padding: 10px 8px; }
+.day.past { opacity: .45; }
+.day.past .actions { display: none; }   /* past nights aren't actionable */
 .day .dow { width: 42px; flex: none; text-align: center; }
 .day .dow .d { font-size: 18px; font-weight: 600; }
 .day .dow .m { font-size: 10px; color: var(--muted); text-transform: uppercase; }

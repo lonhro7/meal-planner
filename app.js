@@ -75,7 +75,7 @@ document.querySelectorAll("nav.tabs button").forEach((b) => {
 });
 function render(tab) {
   state.tab = tab;
-  if (tab === "plan") renderPlan();
+  if (tab === "plan") renderPlan(true);   // scroll to today when opening the Plan tab
   else if (tab === "shopping") renderShopping();
   else if (tab === "pantry") renderPantry();
   else if (tab === "recipes") renderRecipes();
@@ -84,7 +84,7 @@ function render(tab) {
 function goTab(tab) { document.querySelector(`nav.tabs button[data-tab="${tab}"]`).click(); }
 
 // ---------------------------------------------------------------- PLAN
-function renderPlan() {
+function renderPlan(scrollToday) {
   const p = Store.getPlan();
   $("subtitle").textContent = `Rolling ${p.weeks_count}-week plan · serves ${p.settings.servings_per_meal} · dinners`;
   const f = state.filter;
@@ -127,6 +127,10 @@ function renderPlan() {
     html += `</div>`;
   });
   $("tab-plan").innerHTML = html;
+  if (scrollToday) {
+    const el = document.querySelector("#tab-plan .day.today") || document.querySelector("#tab-plan .day:not(.past)");
+    if (el) requestAnimationFrame(() => el.scrollIntoView({ block: "start", behavior: "auto" }));
+  }
 
   // filter bindings (persist into state.filter)
   const numBind = (id, key) => { const el = $(id); if (el) el.oninput = () => { const v = el.value.trim(); state.filter[key] = v === "" ? null : Number(v); }; };
@@ -173,6 +177,7 @@ function locationCardHtml(location) {
 function dayRow(m, today) {
   const f = fmtDate(m.date); const cls = ["day"];
   if (m.date === today) cls.push("today");
+  else if (m.date < today) cls.push("past");
   if (m.status === "away") cls.push("away");
   if (m.status === "leftover") cls.push("leftover");
   const draggable = !m.locked && (m.status === "planned" || m.status === "empty");
