@@ -114,6 +114,32 @@
     <footer><button class="btn primary" id="editSave">Save recipe</button></footer>
   </div>
 
+  <div class="cook" id="stockEdit">
+    <header>
+      <div class="t" id="seTitle">Edit stock</div>
+      <button class="btn small" id="seClose">✕</button>
+    </header>
+    <div class="step-wrap">
+      <div class="row"><label class="f grow" id="seNameField">Name<input id="se_name"></label></div>
+      <div class="row">
+        <label class="f">Packs<input id="se_packs" type="number" min="1" step="1" inputmode="numeric" style="width:80px"></label>
+        <label class="f">Quantity each<input id="se_qty" type="number" step="any" inputmode="decimal" style="width:100px"></label>
+        <label class="f">Unit<select id="se_unit"><option>g</option><option>kg</option><option>ml</option><option>l</option>
+          <option>whole</option><option>can</option><option>tbsp</option><option>tsp</option><option>cup</option></select></label></div>
+      <div class="small muted" id="seTotal" style="margin:2px 0 8px"></div>
+      <div class="row">
+        <label class="f">Location<select id="se_loc"><option value="freezer">Freezer</option><option value="fridge">Fridge</option><option value="pantry">Pantry</option></select></label>
+        <label class="f">Purchase date<input id="se_pdate" type="date"></label>
+        <label class="f">Best before<input id="se_bbdate" type="date"></label></div>
+      <label class="f" style="flex-direction:row;align-items:center;gap:8px;margin:8px 0">
+        <input id="se_special" type="checkbox"> ⭐ Special occasion (auto-planner won't use it)</label>
+      <div class="row" style="margin-top:14px">
+        <button class="btn" id="seUsedOne">✓ Used one pack</button>
+        <button class="btn" id="seUsedAll" style="border-color:var(--danger);color:var(--danger)">✕ All used / remove</button></div>
+    </div>
+    <footer><button class="btn primary" id="seSave">Save</button></footer>
+  </div>
+
   <div class="toast" id="toast"></div>
 
   <script src="seed.js"></script>

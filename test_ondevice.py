@@ -435,6 +435,25 @@ try:
           return d.classList.contains('past') === (dt < '{today}'); }})""")
         check(pastok, "days before today carry the 'past' (greyed) class; today/future do not")
 
+        print("23. Stock: multi-packs, edit, mark used")
+        spid = ev("""(async()=>await Store.addPantry({category:'meat',is_meat:true,meat_type:'Pork',meat_cut:'mince',quantity:500,packs:3,unit:'g',location:'freezer'}))()""")
+        check(ev("Store.pantryHave({is_meat:true, meat_type:'pork', meat_cut:'mince', unit:'g', name:''})") >= 1500, "3 × 500 g counts as 1500 g available")
+        ev("render('plan')"); pg.wait_for_selector(f'[data-stockedit="{spid}"]')
+        lbl = ev(f"document.querySelector('[data-stockedit=\"{spid}\"] .qty').textContent")
+        check("3 × 500 g" in lbl, f"freezer card shows multi-pack label ({lbl!r})")
+        pg.eval_on_selector(f'[data-stockedit="{spid}"]', "el=>el.click()")
+        pg.wait_for_selector("#stockEdit.open")
+        pg.eval_on_selector("#seUsedOne", "el=>el.click()")
+        pg.wait_for_function(f"Store.state.pantry.find(x=>x.id==={spid}).packs===2")
+        check(True, "'Used one pack' decrements packs (3 -> 2)")
+        pg.eval_on_selector("#seUsedAll", "el=>el.click()")
+        pg.wait_for_function(f"!Store.state.pantry.some(x=>x.id==={spid})")
+        check(True, "'All used / remove' deletes the entry")
+        upd = ev("""(async()=>{ const id=await Store.addPantry({category:'veg',is_meat:false,name:'Passata',quantity:500,unit:'ml',location:'pantry'});
+          await Store.updatePantry(id,{quantity:700, packs:2, location:'fridge'}); const p=Store.state.pantry.find(x=>x.id===id);
+          const out={q:p.quantity,pk:p.packs,loc:p.location}; await Store.deletePantry(id); return out; })()""")
+        check(upd["q"] == 700 and upd["pk"] == 2 and upd["loc"] == "fridge", f"updatePantry edits an entry ({upd})")
+
         print("15. Export / reset / restore round-trip")
         base = ev("Store.listRecipes().length")
         exp = ev("JSON.stringify(Store.exportData())")

@@ -41,6 +41,11 @@ function qtyLabelSmart(q, unit) {
   if (unit === "ml" && q >= 1000) return `${trimNum(q / 1000)} L`;
   return qtyLabel(q, unit);
 }
+// stock quantity label: shows multi-packs as "3 × 500 g"
+function stockQty(it) {
+  const one = qtyLabelSmart(it.quantity, it.unit);
+  return (it.packs || 1) > 1 ? `${it.packs} × ${one}` : one;
+}
 // standard Australian can/tin sizes so recipes show a real weight, not just "1 can"
 function canSize(name) {
   const n = (name || "").toLowerCase();
@@ -149,7 +154,23 @@ function renderPlan(scrollToday) {
   $("regenAll").onclick = () => regenerate({ scope: "all" });
   document.querySelectorAll("[data-regenweek]").forEach((b) => b.onclick = () => regenerate({ scope: "week", start: b.dataset.regenweek }));
   wireDayActions();
+  wireStockRows();
   document.querySelectorAll(".weekcard").forEach((card) => makeSortable(card, () => commitReorder(card)));
+}
+
+// tap a fridge/freezer/pantry item to edit it; ✓ marks one pack used
+function wireStockRows() {
+  document.querySelectorAll("[data-stockused]").forEach((b) => b.onclick = async (e) => {
+    e.stopPropagation();
+    const res = await Store.markPantryUsed(Number(b.dataset.stockused));
+    toast(res === "decremented" ? "One pack used" : "Used up — removed");
+    render(state.tab);
+  });
+  document.querySelectorAll("[data-stockedit]").forEach((row) => {
+    const open = () => openStockEdit(Number(row.dataset.stockedit));
+    row.onclick = open;
+    row.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } };
+  });
 }
 
 function bestBeforeLabel(it) {
@@ -167,9 +188,10 @@ function locationCardHtml(location) {
   const sum = location === "fridge" ? Store.fridgeSummary() : Store.freezerSummary();
   let inner;
   if (!sum.any) inner = `<div class="small muted">Nothing in the ${location}. Add stock under <b>Pantry</b> (set location to ${location === "fridge" ? "Fridge" : "Freezer"}).</div>`;
-  else inner = sum.items.map((it) => `<div class="list-item"><span class="name">${icon} ${it.display}
+  else inner = sum.items.map((it) => `<div class="list-item stock-row" data-stockedit="${it.id}" role="button" tabindex="0"><span class="name">${icon} ${it.display}
       ${it.special_occasion ? '<span class="small muted">· ⭐ reserved</span>' : (it.used_by_plan ? '<span class="pill good" style="margin-left:6px">in this plan</span>' : "")}${bestBeforeLabel(it)}</span>
-      <span class="qty">${qtyLabelSmart(it.quantity, it.unit)}</span></div>`).join("");
+      <span class="qty">${stockQty(it)}</span>
+      <button class="btn small" data-stockused="${it.id}" title="Mark one as used">✓ Used</button></div>`).join("");
   return `<details class="card" open><summary style="font-weight:600;font-size:15px;color:var(--text)">${icon} ${title}</summary>
     <div style="margin-top:8px">${inner}</div></details>`;
 }
@@ -339,6 +361,48 @@ function placeLeftover(mealId) {
   });
 }
 
+// ---- stock editing (tap a fridge/freezer/pantry item) ----
+function openStockEdit(id) {
+  const p = Store.getPantry().find((x) => x.id === id); if (!p) return;
+  state.editingStock = id;
+  $("seTitle").textContent = p.is_meat ? p.display : "Edit stock";
+  $("seNameField").style.display = p.is_meat ? "none" : "";
+  $("se_name").value = p.name || "";
+  $("se_packs").value = p.packs || 1;
+  $("se_qty").value = p.quantity;
+  $("se_unit").value = p.unit;
+  $("se_loc").value = p.location;
+  $("se_pdate").value = p.purchase_date || "";
+  $("se_bbdate").value = p.best_before || "";
+  $("se_special").checked = !!p.special_occasion;
+  seTotalHint();
+  $("stockEdit").classList.add("open");
+}
+function seTotalHint() {
+  const packs = Math.max(1, Math.round(+$("se_packs").value) || 1), qty = Number($("se_qty").value) || 0;
+  $("seTotal").textContent = packs > 1 ? `Total: ${packs} × ${qtyLabelSmart(qty, $("se_unit").value)} = ${qtyLabelSmart(packs * qty, $("se_unit").value)}` : "";
+}
+["se_packs","se_qty"].forEach((id) => $(id).oninput = seTotalHint);
+$("se_unit").onchange = seTotalHint;
+function closeStockEdit() { $("stockEdit").classList.remove("open"); }
+$("seClose").onclick = closeStockEdit;
+$("seSave").onclick = async () => {
+  const id = state.editingStock; if (id == null) return;
+  await Store.updatePantry(id, { name: $("se_name").value.trim(), packs: +$("se_packs").value || 1,
+    quantity: Number($("se_qty").value) || 0, unit: $("se_unit").value, location: $("se_loc").value,
+    purchase_date: $("se_pdate").value, best_before: $("se_bbdate").value, special_occasion: $("se_special").checked });
+  closeStockEdit(); toast("Stock updated"); render(state.tab);
+};
+$("seUsedOne").onclick = async () => {
+  const res = await Store.markPantryUsed(state.editingStock);
+  if (res === "decremented") { const p = Store.getPantry().find((x) => x.id === state.editingStock); $("se_packs").value = p.packs; seTotalHint(); toast("One pack used"); render(state.tab); }
+  else { closeStockEdit(); toast("Used up — removed"); render(state.tab); }
+};
+$("seUsedAll").onclick = async () => {
+  await Store.markPantryUsed(state.editingStock, true);
+  closeStockEdit(); toast("Removed from stock"); render(state.tab);
+};
+
 // ---- recipe editing (fill in ingredients/method for a recipe, incl. new ones) ----
 function ingToLine(i) { return [i.quantity != null ? trimNum(i.quantity) : "", i.unit, i.name].filter(Boolean).join(" ").trim(); }
 function openRecipeEdit(id) {
@@ -448,10 +512,10 @@ function renderPantry() {
   let html = `<div class="card"><h2>What's at home</h2>
     <div class="small muted" style="margin-bottom:8px">Meat here is checked against the plan to build the meat-to-buy list. The planner also leans toward using what's in your freezer.</div>`;
   if (!items.length) html += `<div class="empty-note">Nothing recorded yet. Add stock below.</div>`;
-  items.forEach((p) => { html += `<div class="list-item"><span class="name">${p.display}
-    <div class="small muted">${p.location}${p.special_occasion ? " · ⭐ special occasion" : ""}${p.best_before ? " · best before " + fmtLong(p.best_before) : ""}</div></span>
-    <span class="qty">${qtyLabelSmart(p.quantity, p.unit)}</span>
-    <button class="btn small" data-delpantry="${p.id}">✕</button></div>`; });
+  items.forEach((p) => { html += `<div class="list-item stock-row" data-stockedit="${p.id}" role="button" tabindex="0"><span class="name">${p.display}
+    <div class="small muted">${p.location}${p.special_occasion ? " · ⭐ special occasion" : ""}${p.best_before ? " · best before " + fmtLong(p.best_before) : ""} · tap to edit</div></span>
+    <span class="qty">${stockQty(p)}</span>
+    <button class="btn small" data-stockused="${p.id}" title="Mark one as used">✓ Used</button></div>`; });
   html += `</div>`;
 
   const typeOpts = Store.MEAT_TYPES.map((t) => `<option value="${t}">${t}</option>`).join("");
@@ -466,10 +530,12 @@ function renderPantry() {
         <div class="combo"><input id="p_mcut" autocomplete="off" placeholder="Tap to choose or search…">
         <div id="cutMenu" class="combo-menu hidden"></div></div></label></div>
     <div class="row">
-      <label class="f">Quantity<input id="p_qty" type="number" step="any" inputmode="decimal" placeholder="0" style="width:100px"></label>
+      <label class="f">Packs<input id="p_packs" type="number" min="1" step="1" inputmode="numeric" value="1" style="width:70px"></label>
+      <label class="f">Quantity each<input id="p_qty" type="number" step="any" inputmode="decimal" placeholder="0" style="width:100px"></label>
       <label class="f">Unit<select id="p_unit"><option>g</option><option>kg</option><option>ml</option><option>l</option>
         <option>whole</option><option>can</option><option>tbsp</option><option>tsp</option><option>cup</option></select></label>
       <label class="f">Location<select id="p_loc"><option value="freezer">Freezer</option><option value="fridge">Fridge</option><option value="pantry">Pantry</option></select></label></div>
+    <div class="small muted" style="margin:2px 0 4px">Packs = how many of the same item, e.g. 3 packs × 500 g beef mince.</div>
     <div class="row">
       <label class="f">Purchase date (optional)<input id="p_pdate" type="date"></label>
       <label class="f">Best before (optional)<input id="p_bbdate" type="date"></label></div>
@@ -507,6 +573,7 @@ function renderPantry() {
   $("addPantry").onclick = async () => {
     const isMeat = catSel.value === "meat";
     const base = { quantity: Number($("p_qty").value) || 0, unit: $("p_unit").value, location: $("p_loc").value,
+      packs: +$("p_packs").value || 1,
       special_occasion: $("p_special").checked, purchase_date: $("p_pdate").value, best_before: $("p_bbdate").value };
     const body = isMeat
       ? { ...base, category: "meat", is_meat: true, meat_type: $("p_mtype").value, meat_cut: $("p_mcut").value.trim() }
@@ -515,7 +582,7 @@ function renderPantry() {
     if (isMeat && !body.meat_cut) { toast("Enter a cut/flavour"); return; }
     await Store.addPantry(body); toast("Added to stock"); renderPantry();
   };
-  document.querySelectorAll("[data-delpantry]").forEach((b) => b.onclick = async () => { await Store.deletePantry(Number(b.dataset.delpantry)); renderPantry(); });
+  wireStockRows();
 }
 
 // ---------------------------------------------------------------- RECIPES

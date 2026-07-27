@@ -186,6 +186,7 @@ const Store = {
       if (p.special_occasion == null) p.special_occasion = false;
       if (p.purchase_date === undefined) p.purchase_date = "";
       if (p.best_before === undefined) p.best_before = "";
+      if (!p.packs) p.packs = 1;
     });
     this.reseed();
   },
@@ -364,9 +365,24 @@ const Store = {
     }
     const p = { id, name: item.name || "", category: item.category || "meat", is_meat: isMeat,
       meat_type: item.meat_type || "", meat_cut: item.meat_cut || "", quantity: item.quantity || 0,
+      packs: Math.max(1, Math.round(item.packs || 1)),   // e.g. 3 × 500 g
       unit: item.unit || "g", location, special_occasion: !!item.special_occasion,
       purchase_date: item.purchase_date || "", best_before };
     this.state.pantry.push(p); await this.persist(); return id;
+  },
+  async updatePantry(id, data) {
+    const p = this.state.pantry.find((x) => x.id === id); if (!p) return;
+    ["name","category","meat_type","meat_cut","quantity","unit","location","purchase_date","best_before"]
+      .forEach((k) => { if (data[k] !== undefined) p[k] = data[k]; });
+    if (data.special_occasion !== undefined) p.special_occasion = !!data.special_occasion;
+    if (data.packs !== undefined) p.packs = Math.max(1, Math.round(data.packs) || 1);
+    await this.persist();
+  },
+  // "I've used one" — takes one pack out of a multi-pack, or removes the item entirely.
+  async markPantryUsed(id, all = false) {
+    const p = this.state.pantry.find((x) => x.id === id); if (!p) return;
+    if (!all && (p.packs || 1) > 1) { p.packs -= 1; await this.persist(); return "decremented"; }
+    this.state.pantry = this.state.pantry.filter((x) => x.id !== id); await this.persist(); return "removed";
   },
   // preview the auto best-before a freezer meat item would get (for the UI)
   autoBestBefore(meat_type, meat_cut, purchase_date, location) {
@@ -377,7 +393,7 @@ const Store = {
   // meat types available to the auto-planner (excludes special-occasion, reserved stock)
   availableMeatTypes() {
     const set = new Set();
-    this.state.pantry.forEach((p) => { if (p.is_meat && !p.special_occasion && p.quantity > 0) set.add(norm(p.meat_type)); });
+    this.state.pantry.forEach((p) => { if (p.is_meat && !p.special_occasion && p.quantity * (p.packs || 1) > 0) set.add(norm(p.meat_type)); });
     return set;
   },
   // distinct meat type+cut used across recipes, with default price + any user override
@@ -433,7 +449,7 @@ const Store = {
     const today = todayISO();
     const items = this.state.pantry.filter((p) => p.location === location)
       .map((p) => ({ id: p.id, display: this.displayName(p), meat_type: p.meat_type, quantity: p.quantity, unit: p.unit,
-        special_occasion: !!p.special_occasion, best_before: p.best_before || "",
+        packs: p.packs || 1, special_occasion: !!p.special_occasion, best_before: p.best_before || "",
         days_left: p.best_before ? daysBetween(today, p.best_before) : null,
         used_by_plan: p.is_meat && used.has(norm(p.meat_type)) }))
       .sort((a, b) => a.display.localeCompare(b.display));
@@ -776,8 +792,8 @@ const Store = {
     for (const p of this.state.pantry) {
       if (p.special_occasion) continue;
       if (p.unit !== row.unit) continue;
-      if (row.is_meat && p.is_meat) { if (norm(p.meat_type) === norm(row.meat_type) && cutMatch(p.meat_cut, row.meat_cut)) have += p.quantity; }
-      else if (!row.is_meat && !p.is_meat && norm(p.name) === norm(row.name)) have += p.quantity;
+      if (row.is_meat && p.is_meat) { if (norm(p.meat_type) === norm(row.meat_type) && cutMatch(p.meat_cut, row.meat_cut)) have += p.quantity * (p.packs || 1); }
+      else if (!row.is_meat && !p.is_meat && norm(p.name) === norm(row.name)) have += p.quantity * (p.packs || 1);
     }
     return have;
   },
