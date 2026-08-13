@@ -1,5 +1,5 @@
 {
-  "updated": "2026-08-11",
+  "updated": "2026-08-13",
   "source": "Australian Meat Emporium (meatemporium.com.au)",
   "note": "AUD $/kg, auto-scraped Mon/Wed/Fri. Cheapest listing per cut.",
   "kg_prices": {
@@ -16,7 +16,7 @@
     "beef|porterhouse steak": 21.99,
     "beef|ribs": 23.39,
     "beef|rump": 16.89,
-    "beef|rump steak": 24.79,
+    "beef|rump steak": 12.09,
     "beef|scotch fillet": 32.4,
     "beef|short ribs": 62.98,
     "beef|skirt": 57.18,
