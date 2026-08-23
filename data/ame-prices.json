@@ -1,12 +1,12 @@
 {
-  "updated": "2026-08-20",
+  "updated": "2026-08-23",
   "source": "Australian Meat Emporium (meatemporium.com.au)",
   "note": "AUD $/kg, auto-scraped Mon/Wed/Fri. Cheapest listing per cut.",
   "kg_prices": {
     "beef|brisket": 16.49,
     "beef|chuck": 21.59,
     "beef|eye fillet": 32.49,
-    "beef|eye fillet whole": 75.58,
+    "beef|eye fillet whole": 125.98,
     "beef|flank": 59.38,
     "beef|gravy beef": 14.29,
     "beef|mince": 13.29,
