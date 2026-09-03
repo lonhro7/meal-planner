@@ -1,5 +1,5 @@
 {
-  "updated": "2026-09-01",
+  "updated": "2026-09-03",
   "source": "Australian Meat Emporium (meatemporium.com.au)",
   "note": "AUD $/kg, auto-scraped Mon/Wed/Fri. Cheapest listing per cut.",
   "kg_prices": {
@@ -7,7 +7,7 @@
     "beef|chuck": 21.59,
     "beef|eye fillet": 32.49,
     "beef|eye fillet whole": 125.98,
-    "beef|flank": 59.38,
+    "beef|flank": 52.78,
     "beef|gravy beef": 14.29,
     "beef|mince": 13.29,
     "beef|minute steak": 14.99,
@@ -45,7 +45,8 @@
     "pork|loin": 10.99,
     "pork|loin steak": 11.99,
     "pork|mince": 8.24,
-    "pork|ribs": 23.79,
+    "pork|ribs": 17.99,
+    "pork|scotch fillet": 31.18,
     "pork|shoulder": 29.88,
     "sausage|beef sausage": 9.51,
     "sausage|chorizo": 9.51,
