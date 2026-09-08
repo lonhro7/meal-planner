@@ -1,5 +1,5 @@
 {
-  "updated": "2026-09-06",
+  "updated": "2026-09-08",
   "source": "Australian Meat Emporium (meatemporium.com.au)",
   "note": "AUD $/kg, auto-scraped Mon/Wed/Fri. Cheapest listing per cut.",
   "kg_prices": {
@@ -54,6 +54,7 @@
     "sausage|lamb & rosemary": 10.07,
     "sausage|pork sausage": 9.4,
     "smallgoods|bacon": 17.99,
-    "smallgoods|pancetta": 15.75
+    "smallgoods|pancetta": 15.75,
+    "smallgoods|sliced ham": 59.98
   }
 }
