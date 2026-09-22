@@ -1,5 +1,5 @@
 {
-  "updated": "2026-09-20",
+  "updated": "2026-09-22",
   "source": "Australian Meat Emporium (meatemporium.com.au)",
   "note": "AUD $/kg, auto-scraped Mon/Wed/Fri. Cheapest listing per cut.",
   "kg_prices": {
@@ -31,12 +31,12 @@
     "chicken|wings": 11.18,
     "fish|cod fillet": 49.99,
     "lamb|backstrap": 29.14,
-    "lamb|cutlet": 41.99,
+    "lamb|cutlet": 27.99,
     "lamb|forequarter chop": 18.39,
     "lamb|leg": 16.79,
     "lamb|leg (bone in)": 31.49,
     "lamb|leg steak": 22.49,
-    "lamb|loin chop": 30.99,
+    "lamb|loin chop": 18.59,
     "lamb|mince": 13.49,
     "lamb|shank": 23.99,
     "lamb|shoulder": 40.78,
