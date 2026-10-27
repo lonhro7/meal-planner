@@ -1,5 +1,5 @@
 {
-  "updated": "2026-10-25",
+  "updated": "2026-10-27",
   "source": "Australian Meat Emporium (meatemporium.com.au)",
   "note": "AUD $/kg, auto-scraped Mon/Wed/Fri. Cheapest listing per cut.",
   "kg_prices": {
@@ -23,7 +23,7 @@
     "beef|steak": 13.5,
     "beef|stir-fry strips": 12.64,
     "beef|topside": 83.56,
-    "chicken|breast": 19.48,
+    "chicken|breast": 22.49,
     "chicken|drumstick": 7.49,
     "chicken|maryland": 9.89,
     "chicken|tenderloins": 10.99,
