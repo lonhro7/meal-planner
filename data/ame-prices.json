@@ -1,5 +1,5 @@
 {
-  "updated": "2026-10-27",
+  "updated": "2026-10-29",
   "source": "Australian Meat Emporium (meatemporium.com.au)",
   "note": "AUD $/kg, auto-scraped Mon/Wed/Fri. Cheapest listing per cut.",
   "kg_prices": {
@@ -33,7 +33,7 @@
     "lamb|backstrap": 29.14,
     "lamb|cutlet": 44.79,
     "lamb|forequarter chop": 18.39,
-    "lamb|leg": 16.79,
+    "lamb|leg": 19.19,
     "lamb|leg (bone in)": 31.49,
     "lamb|leg steak": 22.49,
     "lamb|loin chop": 30.99,
