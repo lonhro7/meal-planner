@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-03",
+  "updated": "2026-11-05",
   "source": "Australian Meat Emporium (meatemporium.com.au)",
   "note": "AUD $/kg, auto-scraped Mon/Wed/Fri. Cheapest listing per cut.",
   "kg_prices": {
@@ -46,6 +46,7 @@
     "pork|loin steak": 11.99,
     "pork|mince": 8.24,
     "pork|ribs": 17.99,
+    "pork|scotch fillet": 31.18,
     "pork|shoulder": 29.88,
     "sausage|beef sausage": 9.51,
     "sausage|chorizo": 9.51,
@@ -55,6 +56,6 @@
     "sausage|pork sausage": 9.4,
     "smallgoods|bacon": 17.99,
     "smallgoods|pancetta": 15.75,
-    "smallgoods|sliced ham": 59.98
+    "smallgoods|sliced ham": 43.19
   }
 }
