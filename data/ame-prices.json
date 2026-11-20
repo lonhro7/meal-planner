@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-18",
+  "updated": "2026-11-20",
   "source": "Australian Meat Emporium (meatemporium.com.au)",
   "note": "AUD $/kg, auto-scraped Mon/Wed/Fri. Cheapest listing per cut.",
   "kg_prices": {
@@ -13,11 +13,11 @@
     "beef|osso bucco": 13.29,
     "beef|oyster blade": 13.74,
     "beef|porterhouse steak": 24.8,
-    "beef|ribs": 23.39,
+    "beef|ribs": 29.24,
     "beef|rump": 18.19,
     "beef|rump steak": 12.09,
     "beef|scotch fillet": 34.8,
-    "beef|short ribs": 62.98,
+    "beef|short ribs": 59.97,
     "beef|steak": 13.5,
     "beef|stir-fry strips": 12.64,
     "beef|topside": 83.56,
